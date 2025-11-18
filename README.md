@@ -181,6 +181,16 @@ Using the frontend:
 | POST | `/events/location` | Log location event |
 | GET | `/insights/daily` | Daily summary |
 
+📖 **[View Complete API Reference with Examples →](API_REFERENCE.md)**
+
+The API reference includes:
+- Detailed request/response formats with JSON examples
+- Step-by-step internal processing explanations
+- Mobile app integration code samples
+- Mathematical formulas (confidence calculation, distance)
+- Error handling and edge cases
+- Complete workflow examples
+
 ### Example: Calibration
 
 ```bash
@@ -219,8 +229,11 @@ Response:
 
 ## Documentation
 
+📑 **[Documentation Index](DOCUMENTATION_INDEX.md)** - Quick reference to all docs
+
 ### For Developers
 
+- **[API_REFERENCE.md](API_REFERENCE.md)** - 📖 **Complete API documentation with examples** (START HERE!)
 - **[ARCHITECTURE.md](backend/ARCHITECTURE.md)** - Complete system design, data flow, algorithms
 - **[BACKEND_PLAN.md](BACKEND_PLAN.md)** - Backend development phases and API contracts
 - **[FRONTEND_PLAN.md](FRONTEND_PLAN.md)** - Frontend structure and usage guide
