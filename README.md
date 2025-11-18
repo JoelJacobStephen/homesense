@@ -102,7 +102,7 @@ Optional:
 ## Project Structure
 
 ```
-homesense-api/
+homesense/
 ├── backend/                  # FastAPI Backend
 │   ├── app/
 │   │   ├── api/             # API routes

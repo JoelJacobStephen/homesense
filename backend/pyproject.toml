@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "homesense-api"
+name = "homesense"
 version = "1.0.0"
 description = "HomeSense FastAPI backend for indoor positioning"
 authors = ["HomeSense Team"]
