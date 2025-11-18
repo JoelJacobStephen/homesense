@@ -1,0 +1,37 @@
+[
+  {
+    "readings": [
+      {"beacon_id": "AA", "rssi": -63.5},
+      {"beacon_id": "BB", "rssi": -75.2},
+      {"beacon_id": "CC", "rssi": -82.0}
+    ]
+  },
+  {
+    "readings": [
+      {"beacon_id": "AA", "rssi": -72.1},
+      {"beacon_id": "BB", "rssi": -68.5},
+      {"beacon_id": "CC", "rssi": -80.3}
+    ]
+  },
+  {
+    "readings": [
+      {"beacon_id": "AA", "rssi": -80.0},
+      {"beacon_id": "BB", "rssi": -78.5},
+      {"beacon_id": "CC", "rssi": -70.2}
+    ]
+  },
+  {
+    "readings": [
+      {"beacon_id": "AA", "rssi": -64.2},
+      {"beacon_id": "BB", "rssi": -76.0},
+      {"beacon_id": "CC", "rssi": -81.5}
+    ]
+  },
+  {
+    "readings": [
+      {"beacon_id": "AA", "rssi": -74.5},
+      {"beacon_id": "BB", "rssi": -69.2},
+      {"beacon_id": "CC", "rssi": -79.8}
+    ]
+  }
+]
