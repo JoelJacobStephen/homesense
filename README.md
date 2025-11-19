@@ -65,6 +65,7 @@ Optional:
 ```
 
 **Result:** Each beacon has a "fingerprint" (mean RSSI)
+
 - Beacon AA (Kitchen): -63.5 dBm
 - Beacon BB (Office): -72.1 dBm
 - Beacon CC (Bedroom): -80.2 dBm
@@ -92,7 +93,7 @@ Optional:
    - Room: Kitchen
    - Time: Sat 08:30
    - Recent rooms: [Bedroom, Kitchen]
-   
+
 2. Backend returns:
    - Likely activity: "Making breakfast"
    - Suggestion: "Start your coffee maker"
@@ -118,8 +119,6 @@ homesense/
 │   ├── utils/               # Helper modules
 │   ├── samples/             # Sample data files
 │   └── README.md            # Frontend usage guide
-├── BACKEND_PLAN.md          # Backend development plan
-├── FRONTEND_PLAN.md         # Frontend development plan
 └── README.md                # This file
 ```
 
@@ -139,6 +138,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 Backend will be available at:
+
 - Local: http://localhost:8000
 - API Docs: http://localhost:8000/docs
 - Android Emulator: http://10.0.2.2:8000
@@ -158,6 +158,7 @@ Frontend will open at http://localhost:8501
 ### 3. Test with Sample Data
 
 Using the frontend:
+
 1. Go to "Backend Status" page - verify connection
 2. Go to "Calibration Upload" page
 3. Upload `samples/calibration_windows.json`
@@ -170,20 +171,21 @@ Using the frontend:
 
 ### Core Endpoints
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/health` | Health check |
-| POST | `/calibration/upload` | Upload calibration data |
-| POST | `/calibration/fit` | Calculate centroids |
-| GET | `/centroids` | Get all centroids |
-| POST | `/infer` | Predict current room |
-| POST | `/suggest` | Get suggestions |
-| POST | `/events/location` | Log location event |
-| GET | `/insights/daily` | Daily summary |
+| Method | Endpoint              | Description             |
+| ------ | --------------------- | ----------------------- |
+| GET    | `/health`             | Health check            |
+| POST   | `/calibration/upload` | Upload calibration data |
+| POST   | `/calibration/fit`    | Calculate centroids     |
+| GET    | `/centroids`          | Get all centroids       |
+| POST   | `/infer`              | Predict current room    |
+| POST   | `/suggest`            | Get suggestions         |
+| POST   | `/events/location`    | Log location event      |
+| GET    | `/insights/daily`     | Daily summary           |
 
 📖 **[View Complete API Reference with Examples →](API_REFERENCE.md)**
 
 The API reference includes:
+
 - Detailed request/response formats with JSON examples
 - Step-by-step internal processing explanations
 - Mobile app integration code samples
@@ -220,6 +222,7 @@ curl -X POST http://localhost:8000/infer \
 ```
 
 Response:
+
 ```json
 {
   "room": "Kitchen",
@@ -235,8 +238,6 @@ Response:
 
 - **[API_REFERENCE.md](API_REFERENCE.md)** - 📖 **Complete API documentation with examples** (START HERE!)
 - **[ARCHITECTURE.md](backend/ARCHITECTURE.md)** - Complete system design, data flow, algorithms
-- **[BACKEND_PLAN.md](BACKEND_PLAN.md)** - Backend development phases and API contracts
-- **[FRONTEND_PLAN.md](FRONTEND_PLAN.md)** - Frontend structure and usage guide
 - **[Backend README](backend/README.md)** - Backend quick start and examples
 - **[Frontend README](frontend/README.md)** - Frontend setup and features
 
@@ -274,6 +275,7 @@ Response:
 Your mobile app should:
 
 ### Calibration
+
 1. Scan for beacon in current room
 2. Record RSSI samples for 2+ minutes
 3. POST to `/calibration/upload` with samples
@@ -281,6 +283,7 @@ Your mobile app should:
 5. POST to `/calibration/fit` to calculate centroids
 
 ### Inference
+
 1. Scan all visible beacons
 2. Collect current RSSI for each beacon
 3. POST to `/infer` with readings
@@ -291,6 +294,7 @@ Your mobile app should:
 ## Technology Stack
 
 ### Backend
+
 - **FastAPI** - Modern Python web framework
 - **SQLAlchemy** - ORM for database operations
 - **SQLite** - Embedded database (no setup required)
@@ -298,6 +302,7 @@ Your mobile app should:
 - **Uvicorn** - ASGI server
 
 ### Frontend (Optional Testing Tool)
+
 - **Streamlit** - Python web UI framework
 - **Pandas** - Data manipulation
 - **Altair** - Interactive charts
@@ -325,21 +330,25 @@ BACKEND_BASE=http://localhost:8000
 ## Troubleshooting
 
 ### Backend won't start
+
 - Check Python version (3.10+)
 - Install dependencies: `pip install -e .`
 - Check port 8000 is available
 
 ### Connection refused
+
 - Ensure backend is running
 - For Android emulator, use `http://10.0.2.2:8000`
 - For physical device, use laptop's LAN IP
 
 ### Low confidence scores
+
 - Beacons too close together (move them apart)
 - Stale calibration (recalibrate)
 - Interference (check other BLE devices)
 
 ### Wrong room prediction
+
 - Recalibrate the beacon
 - Ensure beacon hasn't been moved
 - Record calibration for longer (3+ minutes)
@@ -369,6 +378,3 @@ This project is for personal use. No license specified.
 - **Indoor Positioning** - https://en.wikipedia.org/wiki/Indoor_positioning_system
 
 ---
-
-**Built with ❤️ for smart home automation and privacy-conscious location tracking**
-
