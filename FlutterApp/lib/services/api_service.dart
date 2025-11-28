@@ -84,4 +84,112 @@ class ApiService {
     }
     throw HttpException('Suggest failed ${resp.statusCode}: ${resp.body}');
   }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Calibration Endpoints
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /// Upload RSSI samples collected during calibration for a single beacon/room.
+  Future<Map<String, dynamic>> uploadCalibration({
+    required String beaconId,
+    required String room,
+    required List<double> rssiSamples,
+    required int windowStart,
+    required int windowEnd,
+  }) async {
+    final uri = Uri.parse('$_baseUrl/calibration/upload');
+    final payload = {
+      'beacon_id': beaconId,
+      'room': room,
+      'rssi_samples': rssiSamples,
+      'window_start': windowStart,
+      'window_end': windowEnd,
+    };
+    await resolveReachableBaseUrl();
+    final resp = await http.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(payload),
+    ).timeout(const Duration(seconds: 10));
+    if (resp.statusCode >= 200 && resp.statusCode < 300) {
+      return jsonDecode(resp.body) as Map<String, dynamic>;
+    }
+    throw HttpException('Upload calibration failed ${resp.statusCode}: ${resp.body}');
+  }
+
+  /// Compute centroids (mean RSSI) for all calibrated beacons.
+  /// Must be called after uploading calibration data.
+  Future<Map<String, double>> fitCalibration() async {
+    final uri = Uri.parse('$_baseUrl/calibration/fit');
+    await resolveReachableBaseUrl();
+    final resp = await http.post(uri).timeout(const Duration(seconds: 10));
+    if (resp.statusCode >= 200 && resp.statusCode < 300) {
+      final decoded = jsonDecode(resp.body) as Map<String, dynamic>;
+      return decoded.map((k, v) => MapEntry(k, (v as num).toDouble()));
+    }
+    throw HttpException('Fit calibration failed ${resp.statusCode}: ${resp.body}');
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Centroids Endpoint
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /// Retrieve all computed centroids with room info.
+  Future<List<Map<String, dynamic>>> getCentroids() async {
+    final uri = Uri.parse('$_baseUrl/centroids');
+    await resolveReachableBaseUrl();
+    final resp = await http.get(uri).timeout(const Duration(seconds: 5));
+    if (resp.statusCode >= 200 && resp.statusCode < 300) {
+      final decoded = jsonDecode(resp.body) as List<dynamic>;
+      return decoded.cast<Map<String, dynamic>>();
+    }
+    throw HttpException('Get centroids failed ${resp.statusCode}: ${resp.body}');
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Events Endpoint
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /// Log a dwell event when user has been in a room for a significant duration.
+  Future<int> logLocationEvent({
+    required String room,
+    required int startTs,
+    required int endTs,
+    required double confidence,
+  }) async {
+    final uri = Uri.parse('$_baseUrl/events/location');
+    final payload = {
+      'room': room,
+      'start_ts': startTs,
+      'end_ts': endTs,
+      'confidence': confidence,
+    };
+    await resolveReachableBaseUrl();
+    final resp = await http.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(payload),
+    ).timeout(const Duration(seconds: 5));
+    if (resp.statusCode >= 200 && resp.statusCode < 300) {
+      final decoded = jsonDecode(resp.body) as Map<String, dynamic>;
+      return decoded['id'] as int;
+    }
+    throw HttpException('Log location event failed ${resp.statusCode}: ${resp.body}');
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Insights Endpoint
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /// Get daily insights including room durations and transitions.
+  /// [date] should be in YYYY-MM-DD format.
+  Future<Map<String, dynamic>> getDailyInsights(String date) async {
+    final uri = Uri.parse('$_baseUrl/insights/daily?date=$date');
+    await resolveReachableBaseUrl();
+    final resp = await http.get(uri).timeout(const Duration(seconds: 5));
+    if (resp.statusCode >= 200 && resp.statusCode < 300) {
+      return jsonDecode(resp.body) as Map<String, dynamic>;
+    }
+    throw HttpException('Get daily insights failed ${resp.statusCode}: ${resp.body}');
+  }
 }

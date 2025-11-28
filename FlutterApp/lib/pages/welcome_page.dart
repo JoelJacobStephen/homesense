@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'start_setup_page.dart';
-import 'suggestions_page.dart';
+import 'home_page.dart';
 
 class WelcomePage extends StatefulWidget {
   const WelcomePage({super.key});
@@ -29,7 +29,7 @@ class _WelcomePageState extends State<WelcomePage> {
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
-          builder: (_) => calibrated ? const SuggestionsPage() : const StartSetupPage(),
+          builder: (_) => calibrated ? const HomePage() : const StartSetupPage(),
         ),
       );
     });
