@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
+import '../models/beacon_info.dart';
 import '../models/rooms.dart';
 import 'go_to_room_page.dart';
 
 class AssignRoomsPage extends StatefulWidget {
-  final List<String> selectedBeacons;
+  final List<BeaconInfo> selectedBeacons;
   const AssignRoomsPage({super.key, required this.selectedBeacons});
 
   @override
@@ -11,6 +12,7 @@ class AssignRoomsPage extends StatefulWidget {
 }
 
 class _AssignRoomsPageState extends State<AssignRoomsPage> {
+  // Map from beacon MAC address to assigned room name
   final Map<String, String> _assignments = {};
   final Map<String, bool> _expanded = {};
 
@@ -18,7 +20,7 @@ class _AssignRoomsPageState extends State<AssignRoomsPage> {
   void initState() {
     super.initState();
     for (final b in widget.selectedBeacons) {
-      _expanded[b] = false;
+      _expanded[b.address] = false;
     }
   }
 
@@ -40,29 +42,27 @@ class _AssignRoomsPageState extends State<AssignRoomsPage> {
                 style: Theme.of(context).textTheme.titleMedium,
               ),
             );
-          } // End if
+          }
           final beacon = widget.selectedBeacons[index - 1];
-          final assigned = _assignments[beacon];
+          final assigned = _assignments[beacon.address];
           return Card(
             margin: const EdgeInsets.symmetric(vertical: 8),
             child: ExpansionTile(
               key: ValueKey(
-                '$beacon-${(_expanded[beacon] ?? false) ? 'open' : 'closed'}',
+                '${beacon.address}-${(_expanded[beacon.address] ?? false) ? 'open' : 'closed'}',
               ),
-              initiallyExpanded: _expanded[beacon] ?? false,
+              initiallyExpanded: _expanded[beacon.address] ?? false,
               onExpansionChanged: (isOpen) {
                 setState(() {
                   // Allow only one tile open at a time
                   for (final b in widget.selectedBeacons) {
-                    _expanded[b] = false;
+                    _expanded[b.address] = false;
                   }
-                  _expanded[beacon] = isOpen;
+                  _expanded[beacon.address] = isOpen;
                 });
               },
-              title: Text(beacon + (assigned != null ? ' • $assigned' : '')),
-              subtitle: assigned == null
-                  ? const Text('Tap to select a room')
-                  : const Text('Assigned'),
+              title: Text('${beacon.displayName}${assigned != null ? ' • $assigned' : ''}'),
+              subtitle: Text(assigned == null ? 'Tap to select a room' : 'Assigned'),
               children: [
                 Padding(
                   padding: const EdgeInsets.all(12.0),
@@ -77,11 +77,11 @@ class _AssignRoomsPageState extends State<AssignRoomsPage> {
                       ...Rooms.all.map((room) => RadioListTile<String>(
                             title: Text(room),
                             value: room,
-                            groupValue: _assignments[beacon],
+                            groupValue: _assignments[beacon.address],
                             onChanged: (value) {
                               setState(() {
                                 if (value != null) {
-                                  _assignments[beacon] = value;
+                                  _assignments[beacon.address] = value;
                                 }
                               });
                             },
@@ -101,9 +101,16 @@ class _AssignRoomsPageState extends State<AssignRoomsPage> {
           child: ElevatedButton(
             onPressed: _allAssigned
                 ? () {
+                    // Build list of BeaconRoomAssignment
+                    final assignments = widget.selectedBeacons
+                        .map((b) => BeaconRoomAssignment(
+                              beacon: b,
+                              room: _assignments[b.address]!,
+                            ))
+                        .toList();
                     Navigator.of(context).push(
                       MaterialPageRoute(
-                        builder: (_) => GoToRoomPage(assignments: Map.of(_assignments)),
+                        builder: (_) => GoToRoomPage(assignments: assignments),
                       ),
                     );
                   }

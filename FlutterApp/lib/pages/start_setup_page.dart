@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
 import 'assign_rooms_page.dart';
+import '../models/beacon_info.dart';
 import '../services/bluetooth_service.dart';
 
 class StartSetupPage extends StatefulWidget {
@@ -74,7 +75,7 @@ class _StartSetupPageState extends State<StartSetupPage> {
                     onPressed: () {
                       final chosen = _devices
                           .where((d) => _selectedAddresses.contains(d.address))
-                          .map((d) => d.toString())
+                          .map((d) => BeaconInfo(address: d.address, name: d.name))
                           .toList(growable: false);
                       Navigator.of(context).push(
                         MaterialPageRoute(
