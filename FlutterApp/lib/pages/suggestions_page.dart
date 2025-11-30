@@ -26,6 +26,10 @@ class _SuggestionsPageState extends State<SuggestionsPage> with WidgetsBindingOb
   bool _autoRefreshEnabled = true;
   static const _refreshInterval = Duration(seconds: 15);
 
+  // Debug mode
+  bool _debugMode = false;
+  List<Map<String, dynamic>>? _lastReadings;
+
   // Services
   final ApiService _api = ApiService();
   late final LocationTracker _locationTracker;
@@ -116,6 +120,7 @@ class _SuggestionsPageState extends State<SuggestionsPage> with WidgetsBindingOb
       }
 
       final readings = await BluetoothService.scanReadings();
+      _lastReadings = readings; // Store for debug display
       if (readings.isEmpty) {
         throw Exception('No beacon readings found');
       }
@@ -183,6 +188,15 @@ class _SuggestionsPageState extends State<SuggestionsPage> with WidgetsBindingOb
         ),
         title: const Text('HomeSense'),
         actions: [
+          // Debug toggle
+          IconButton(
+            icon: Icon(
+              Icons.bug_report,
+              color: _debugMode ? Colors.orange : null,
+            ),
+            onPressed: () => setState(() => _debugMode = !_debugMode),
+            tooltip: _debugMode ? 'Debug ON' : 'Debug OFF',
+          ),
           // Auto-refresh toggle
           IconButton(
             icon: Icon(
@@ -208,6 +222,12 @@ class _SuggestionsPageState extends State<SuggestionsPage> with WidgetsBindingOb
             // Location card
             _buildLocationCard(),
             const SizedBox(height: 20),
+
+            // Debug panel (shows detected beacons)
+            if (_debugMode) ...[
+              _buildDebugPanel(),
+              const SizedBox(height: 20),
+            ],
 
             // Suggestions header
             Text(
@@ -274,6 +294,134 @@ class _SuggestionsPageState extends State<SuggestionsPage> with WidgetsBindingOb
               ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildDebugPanel() {
+    // Expected beacons from calibration
+    const calibratedBeacons = {
+      '1C:53:F9:3D:6A:90': ('Living Room', -60.88),
+      '08:D2:3E:24:3A:B4': ('Bedroom', -50.4),
+    };
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.orange.shade300),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.bug_report, color: Colors.orange.shade700, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                'Debug: Detected Beacons',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.orange.shade800,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (_lastReadings == null || _lastReadings!.isEmpty)
+            const Text('No readings yet', style: TextStyle(fontSize: 12))
+          else
+            ...calibratedBeacons.entries.map((entry) {
+              final mac = entry.key;
+              final (roomName, calibratedRssi) = entry.value;
+              final reading = _lastReadings!.cast<Map<String, dynamic>?>().firstWhere(
+                (r) => r?['beacon_id'] == mac,
+                orElse: () => null,
+              );
+              final detected = reading != null;
+              final currentRssi = reading?['rssi'] as int?;
+              final distance = currentRssi != null
+                  ? (currentRssi - calibratedRssi).abs()
+                  : null;
+
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    Icon(
+                      detected ? Icons.bluetooth_connected : Icons.bluetooth_disabled,
+                      size: 16,
+                      color: detected ? Colors.green : Colors.red,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            roomName,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                              color: detected ? Colors.black87 : Colors.grey,
+                            ),
+                          ),
+                          Text(
+                            mac,
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey.shade600,
+                              fontFamily: 'monospace',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (detected)
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            'Now: $currentRssi dBm',
+                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+                          ),
+                          Text(
+                            'Cal: ${calibratedRssi.toStringAsFixed(1)} dBm',
+                            style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
+                          ),
+                          Text(
+                            'Dist: ${distance?.toStringAsFixed(1)}',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: distance != null && distance < 15
+                                  ? Colors.green
+                                  : Colors.orange,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      )
+                    else
+                      Text(
+                        'NOT DETECTED',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.red.shade700,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            }),
+          const SizedBox(height: 8),
+          Text(
+            'Lower "Dist" = more likely room. Beacon must be detected to be considered.',
+            style: TextStyle(fontSize: 10, color: Colors.grey.shade600, fontStyle: FontStyle.italic),
+          ),
+        ],
       ),
     );
   }
