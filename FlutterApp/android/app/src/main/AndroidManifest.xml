@@ -54,5 +54,63 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+        <!-- url_launcher: Allow opening URLs in browser -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="http"/>
+        </intent>
+        <!-- url_launcher: Calendar app -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="content" android:host="com.android.calendar"/>
+        </intent>
+        <package android:name="com.google.android.calendar"/>
+        <!-- url_launcher: Clock/Timer app -->
+        <intent>
+            <action android:name="android.intent.action.SET_TIMER"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SET_ALARM"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SHOW_ALARMS"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SHOW_TIMERS"/>
+        </intent>
+        <package android:name="com.google.android.deskclock"/>
+        <!-- Samsung Clock -->
+        <package android:name="com.sec.android.app.clockpackage"/>
+        <!-- AOSP Clock -->
+        <package android:name="com.android.deskclock"/>
+        <!-- url_launcher: Spotify -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="spotify"/>
+        </intent>
+        <package android:name="com.spotify.music"/>
+        <!-- url_launcher: YouTube -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="youtube"/>
+        </intent>
+        <package android:name="com.google.android.youtube"/>
+        <!-- url_launcher: Google Tasks -->
+        <package android:name="com.google.android.apps.tasks"/>
+        <!-- url_launcher: Google Assistant -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="googleassistant"/>
+        </intent>
+        <package android:name="com.google.android.apps.googleassistant"/>
+        <!-- Play Store (for fallbacks) -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="market"/>
+        </intent>
     </queries>
 </manifest>

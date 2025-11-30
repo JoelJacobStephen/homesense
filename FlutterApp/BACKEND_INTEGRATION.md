@@ -18,13 +18,13 @@ The HomeSense Flutter app was partially implemented with UI flows but lacked act
 
 Added 5 new methods to communicate with the backend:
 
-| Method | Endpoint | Purpose |
-|--------|----------|---------|
-| `uploadCalibration()` | `POST /calibration/upload` | Upload RSSI samples collected during calibration |
-| `fitCalibration()` | `POST /calibration/fit` | Compute centroids after calibration data is uploaded |
-| `getCentroids()` | `GET /centroids` | Retrieve all computed beacon fingerprints |
-| `logLocationEvent()` | `POST /events/location` | Log dwell events when user stays in a room |
-| `getDailyInsights()` | `GET /insights/daily` | Get room usage statistics for a specific day |
+| Method                | Endpoint                   | Purpose                                              |
+| --------------------- | -------------------------- | ---------------------------------------------------- |
+| `uploadCalibration()` | `POST /calibration/upload` | Upload RSSI samples collected during calibration     |
+| `fitCalibration()`    | `POST /calibration/fit`    | Compute centroids after calibration data is uploaded |
+| `getCentroids()`      | `GET /centroids`           | Retrieve all computed beacon fingerprints            |
+| `logLocationEvent()`  | `POST /events/location`    | Log dwell events when user stays in a room           |
+| `getDailyInsights()`  | `GET /insights/daily`      | Get room usage statistics for a specific day         |
 
 ---
 
@@ -63,6 +63,7 @@ class BeaconRoomAssignment {
 **Before:** Timer countdown only (no actual data collection)
 
 **After:**
+
 - Scans for RSSI values every 2 seconds during the 60-second timer
 - Collects samples for the specific beacon assigned to current room
 - Shows real-time sample count during calibration
@@ -81,11 +82,11 @@ class BeaconRoomAssignment {
 ```dart
 class LocationTracker {
   static const dwellThreshold = Duration(seconds: 60);
-  
+
   // Tracks current room, time entered, and confidence values
   // When room changes after 60+ seconds, logs dwell event to backend
   Future<bool> onInferenceResult(String room, double confidence);
-  
+
   // Flush pending events (e.g., when app closes)
   Future<void> flush();
 }
@@ -136,6 +137,7 @@ class LocationTracker {
 **File:** `lib/pages/insights_page.dart`
 
 Features:
+
 - **Date Picker:** Select any date in the past year
 - **Summary Cards:** Active hours, transition count, most visited room
 - **Room Duration Bars:** Visual progress bars showing time spent per room
@@ -152,6 +154,7 @@ Features:
 Created a navigation shell with:
 
 - **Bottom Navigation Bar:**
+
   - Suggestions (lightbulb icon)
   - Insights (chart icon)
   - Preferences (settings icon)
@@ -180,6 +183,7 @@ WelcomePage (2s splash)
 ### 7. Error Handling and Edge Cases
 
 Implemented throughout:
+
 - Backend unreachable during calibration → Error message with retry
 - Empty beacon readings → User-friendly error with troubleshooting
 - Network timeouts → Graceful degradation
@@ -190,25 +194,25 @@ Implemented throughout:
 
 ## Files Created
 
-| File | Purpose |
-|------|---------|
-| `lib/models/beacon_info.dart` | Beacon data model with MAC address |
-| `lib/models/user_prefs.dart` | User preferences model and persistence |
-| `lib/services/location_tracker.dart` | Dwell detection and event logging |
-| `lib/pages/home_page.dart` | Navigation shell with bottom nav + drawer |
-| `lib/pages/preferences_page.dart` | User preferences UI |
-| `lib/pages/insights_page.dart` | Daily insights with charts |
+| File                                 | Purpose                                   |
+| ------------------------------------ | ----------------------------------------- |
+| `lib/models/beacon_info.dart`        | Beacon data model with MAC address        |
+| `lib/models/user_prefs.dart`         | User preferences model and persistence    |
+| `lib/services/location_tracker.dart` | Dwell detection and event logging         |
+| `lib/pages/home_page.dart`           | Navigation shell with bottom nav + drawer |
+| `lib/pages/preferences_page.dart`    | User preferences UI                       |
+| `lib/pages/insights_page.dart`       | Daily insights with charts                |
 
 ## Files Modified
 
-| File | Changes |
-|------|---------|
-| `lib/services/api_service.dart` | Added 5 new endpoint methods |
-| `lib/pages/start_setup_page.dart` | Pass `BeaconInfo` objects |
-| `lib/pages/assign_rooms_page.dart` | Use `BeaconInfo`, pass assignments properly |
-| `lib/pages/go_to_room_page.dart` | Complete rewrite for actual calibration |
-| `lib/pages/suggestions_page.dart` | Auto-refresh, location tracking, enhanced UI |
-| `lib/pages/welcome_page.dart` | Route to `HomePage` instead of `SuggestionsPage` |
+| File                               | Changes                                          |
+| ---------------------------------- | ------------------------------------------------ |
+| `lib/services/api_service.dart`    | Added 5 new endpoint methods                     |
+| `lib/pages/start_setup_page.dart`  | Pass `BeaconInfo` objects                        |
+| `lib/pages/assign_rooms_page.dart` | Use `BeaconInfo`, pass assignments properly      |
+| `lib/pages/go_to_room_page.dart`   | Complete rewrite for actual calibration          |
+| `lib/pages/suggestions_page.dart`  | Auto-refresh, location tracking, enhanced UI     |
+| `lib/pages/welcome_page.dart`      | Route to `HomePage` instead of `SuggestionsPage` |
 
 ---
 
@@ -238,11 +242,11 @@ flutter run
 
 ### Network Configuration
 
-| Environment | Backend URL |
-|-------------|-------------|
-| Android Emulator | `http://10.0.2.2:8000` (auto-configured) |
-| Physical Device | `http://<YOUR_PC_IP>:8000` (edit `api_service.dart`) |
-| iOS Simulator | `http://localhost:8000` (auto-configured) |
+| Environment      | Backend URL                                          |
+| ---------------- | ---------------------------------------------------- |
+| Android Emulator | `http://10.0.2.2:8000` (auto-configured)             |
+| Physical Device  | `http://<YOUR_PC_IP>:8000` (edit `api_service.dart`) |
+| iOS Simulator    | `http://localhost:8000` (auto-configured)            |
 
 ---
 
@@ -281,28 +285,28 @@ curl -X POST http://localhost:8000/calibration/fit
 
 ## App Features Summary
 
-| Feature | Description |
-|---------|-------------|
-| **Calibration** | 60-second RSSI collection per room with real-time sample count |
-| **Room Detection** | Continuous inference with confidence scores |
-| **Suggestions** | LLM-powered contextual suggestions based on room + time |
-| **Dwell Tracking** | Automatic event logging when staying in room 60+ seconds |
-| **Daily Insights** | Room usage statistics, durations, and transitions |
-| **User Preferences** | Personalization for better suggestions |
-| **Auto-Refresh** | Live location updates every 15 seconds |
-| **Recalibration** | Easy reset via drawer menu |
+| Feature              | Description                                                    |
+| -------------------- | -------------------------------------------------------------- |
+| **Calibration**      | 60-second RSSI collection per room with real-time sample count |
+| **Room Detection**   | Continuous inference with confidence scores                    |
+| **Suggestions**      | LLM-powered contextual suggestions based on room + time        |
+| **Dwell Tracking**   | Automatic event logging when staying in room 60+ seconds       |
+| **Daily Insights**   | Room usage statistics, durations, and transitions              |
+| **User Preferences** | Personalization for better suggestions                         |
+| **Auto-Refresh**     | Live location updates every 15 seconds                         |
+| **Recalibration**    | Easy reset via drawer menu                                     |
 
 ---
 
 ## Troubleshooting
 
-| Issue | Solution |
-|-------|----------|
-| `No pubspec.yaml found` | Make sure you're in the `FlutterApp` directory |
-| `Connection timed out` | Backend not running, or wrong IP for physical device |
-| `No beacon readings` | Enable Location services on Android |
-| `Bluetooth permission denied` | Grant permissions in Android settings |
-| `Low confidence scores` | Collect more calibration samples, stay still longer |
+| Issue                         | Solution                                             |
+| ----------------------------- | ---------------------------------------------------- |
+| `No pubspec.yaml found`       | Make sure you're in the `FlutterApp` directory       |
+| `Connection timed out`        | Backend not running, or wrong IP for physical device |
+| `No beacon readings`          | Enable Location services on Android                  |
+| `Bluetooth permission denied` | Grant permissions in Android settings                |
+| `Low confidence scores`       | Collect more calibration samples, stay still longer  |
 
 ---
 
@@ -351,6 +355,4 @@ curl -X POST http://localhost:8000/calibration/fit
 
 ---
 
-*Last Updated: November 2024*
-
-
+_Last Updated: November 2024_

@@ -2,13 +2,15 @@ import 'dart:async';
 import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../services/system_service.dart';
 import '../services/bluetooth_service.dart';
 import '../services/api_service.dart';
 import '../services/location_tracker.dart';
+import '../services/action_service.dart';
 
 class SuggestionsPage extends StatefulWidget {
-  const SuggestionsPage({super.key});
+  final VoidCallback? onOpenDrawer;
+  
+  const SuggestionsPage({super.key, this.onOpenDrawer});
 
   @override
   State<SuggestionsPage> createState() => _SuggestionsPageState();
@@ -165,12 +167,19 @@ class _SuggestionsPageState extends State<SuggestionsPage> with WidgetsBindingOb
     }
   }
 
-  Future<void> _onOpenTimer() async {
-    final ok = await SystemService.openTimer();
+  Future<void> _executeAction(String action) async {
+    final ok = await ActionService.executeAction(action);
     if (!mounted) return;
     if (!ok) {
+      final actionType = ActionService.getActionType(action);
+      String message;
+      if (actionType == ActionType.smartHome) {
+        message = 'Smart home action: "$action" requires device integration.';
+      } else {
+        message = 'Unable to open "$action" on this device.';
+      }
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Unable to open timer on this device.')),
+        SnackBar(content: Text(message)),
       );
     }
   }
@@ -179,13 +188,13 @@ class _SuggestionsPageState extends State<SuggestionsPage> with WidgetsBindingOb
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leading: Builder(
-          builder: (context) => IconButton(
-            icon: const Icon(Icons.menu),
-            onPressed: () => Scaffold.of(context).openDrawer(),
-            tooltip: 'Open menu',
-          ),
-        ),
+        leading: widget.onOpenDrawer != null
+            ? IconButton(
+                icon: const Icon(Icons.menu),
+                onPressed: widget.onOpenDrawer,
+                tooltip: 'Open menu',
+              )
+            : null,
         title: const Text('HomeSense'),
         actions: [
           // Debug toggle
@@ -288,7 +297,7 @@ class _SuggestionsPageState extends State<SuggestionsPage> with WidgetsBindingOb
                     // Quick actions
                     ...((_suggestion!['quick_actions'] as List?) ?? const [])
                         .cast<String>()
-                        .map((qa) => _ActionTile(label: qa, onOpenTimer: _onOpenTimer)),
+                        .map((qa) => _ActionTile(label: qa, onExecute: _executeAction)),
                   ],
                 ),
               ),
@@ -588,63 +597,100 @@ class _SuggestionTile extends StatelessWidget {
 
 class _ActionTile extends StatelessWidget {
   final String label;
-  final Future<void> Function() onOpenTimer;
-  const _ActionTile({required this.label, required this.onOpenTimer});
+  final Future<void> Function(String) onExecute;
+  const _ActionTile({required this.label, required this.onExecute});
 
   @override
   Widget build(BuildContext context) {
-    final isTimer = label.toLowerCase().contains('timer');
+    final actionType = ActionService.getActionType(label);
+    final (icon, color, bgColor) = _getIconAndColors(actionType);
+    final isSmartHome = actionType == ActionType.smartHome;
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: Colors.blue.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(
-                isTimer ? Icons.timer : Icons.play_circle_outline,
-                color: Colors.blue[700],
-                size: 24,
-              ),
+    return GestureDetector(
+      onTap: () => onExecute(label),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey.shade200),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
             ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Text(
-                label,
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      fontWeight: FontWeight.w500,
-                    ),
-              ),
-            ),
-            if (isTimer)
-              ElevatedButton(
-                onPressed: onOpenTimer,
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                ),
-                child: const Text('Open'),
-              ),
           ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () => onExecute(label),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: bgColor,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(icon, color: color, size: 24),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          label,
+                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                fontWeight: FontWeight.w500,
+                              ),
+                        ),
+                        if (isSmartHome)
+                          Text(
+                            'Smart home integration needed',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: Colors.grey[500],
+                                  fontSize: 11,
+                                ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    isSmartHome ? Icons.smart_toy_outlined : Icons.arrow_forward_ios,
+                    color: Colors.grey[400],
+                    size: 16,
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );
+  }
+
+  (IconData, Color, Color) _getIconAndColors(ActionType type) {
+    switch (type) {
+      case ActionType.browser:
+        return (Icons.open_in_browser, Colors.blue[700]!, Colors.blue.withOpacity(0.1));
+      case ActionType.calendar:
+        return (Icons.calendar_today, Colors.purple[700]!, Colors.purple.withOpacity(0.1));
+      case ActionType.clock:
+        return (Icons.timer, Colors.orange[700]!, Colors.orange.withOpacity(0.1));
+      case ActionType.music:
+        return (Icons.music_note, Colors.green[700]!, Colors.green.withOpacity(0.1));
+      case ActionType.video:
+        return (Icons.play_circle_fill, Colors.red[700]!, Colors.red.withOpacity(0.1));
+      case ActionType.tasks:
+        return (Icons.checklist, Colors.teal[700]!, Colors.teal.withOpacity(0.1));
+      case ActionType.smartHome:
+        return (Icons.home_outlined, Colors.grey[600]!, Colors.grey.withOpacity(0.1));
+    }
   }
 }
