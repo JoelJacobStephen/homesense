@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:io' show Platform;
 import 'assign_rooms_page.dart';
 import '../models/beacon_info.dart';
 import '../services/bluetooth_service.dart';
@@ -19,7 +20,7 @@ class _StartSetupPageState extends State<StartSetupPage> {
   @override
   void initState() {
     super.initState();
-    if (Platform.isAndroid) {
+    if (!kIsWeb && Platform.isAndroid) {
       BluetoothService.ensurePermissions();
       // After permissions, check if location services are enabled (needed for scans on many devices).
       WidgetsBinding.instance.addPostFrameCallback((_) async {

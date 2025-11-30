@@ -1,6 +1,6 @@
 import 'dart:convert';
-import 'dart:io';
-import 'package:flutter/foundation.dart';
+import 'dart:io' show Platform, HttpException;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 
 class ApiService {
@@ -12,18 +12,18 @@ class ApiService {
 
   static String _defaultBaseUrl() {
     if (kIsWeb) return 'http://localhost:8000';
-    try {
-      if (Platform.isAndroid) {
-        // Prefer emulator host; if unreachable, we'll fall back during runtime.
-        return 'http://10.0.2.2:8000';
-      }
-    } catch (_) {}
+    if (Platform.isAndroid) {
+      // For real devices, use Mac's local IP
+      // For emulator, use 10.0.2.2
+      return 'http://192.168.1.179:8000';  // <-- Replace with your actual IP, e.g., 'http://192.168.1.100:8000'
+    }
     return 'http://localhost:8000';
   }
 
   Future<void> resolveReachableBaseUrl({Duration timeout = const Duration(seconds: 2)}) async {
     final candidates = <String>[
       _baseUrl,
+      'http://192.168.1.179:8000',  // <-- Replace with your actual IP, e.g., 'http://192.168.1.100:8000'
       'http://10.0.2.2:8000',
       'http://localhost:8000',
     ];
