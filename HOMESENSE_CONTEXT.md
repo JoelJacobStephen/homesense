@@ -1,7 +1,7 @@
 # HomeSense - Complete Project Documentation
 
 > **Context Pack for AI Assistants**
-> 
+>
 > This document provides comprehensive documentation of the HomeSense indoor positioning system, covering the Flutter mobile app and FastAPI backend in full detail.
 
 ---
@@ -96,9 +96,10 @@ RSSI measures the power level of a Bluetooth signal in dBm (decibel-milliwatts).
 - **Key Insight**: When you're in a room, that room's beacon has the strongest (highest) RSSI
 
 **RSSI Scale:**
+
 ```
 -30 to -50 dBm: Very close (< 1 meter)
--50 to -60 dBm: Close (1-3 meters)  
+-50 to -60 dBm: Close (1-3 meters)
 -60 to -70 dBm: Medium (3-5 meters)
 -70 to -80 dBm: Far (5-10 meters)
 -80 to -100 dBm: Very far (10+ meters)
@@ -107,12 +108,14 @@ RSSI measures the power level of a Bluetooth signal in dBm (decibel-milliwatts).
 ### 2. The 1-Beacon-Per-Room Model
 
 **Physical Setup:**
+
 - One BLE beacon is placed in each room
 - Beacon AA → Kitchen
 - Beacon BB → Office
 - Beacon CC → Bedroom
 
 **Mapping:**
+
 - Each beacon's MAC address (`AA:BB:CC:DD:EE:FF`) serves as a unique `beacon_id`
 - Each `beacon_id` is associated with exactly one room
 - This 1:1 mapping simplifies everything
@@ -122,6 +125,7 @@ RSSI measures the power level of a Bluetooth signal in dBm (decibel-milliwatts).
 **Purpose:** Establish a "fingerprint" (reference signal strength) for each beacon when you're in its room.
 
 **Process:**
+
 1. User stands in a room (e.g., Kitchen) for 60+ seconds
 2. App records RSSI samples from that room's beacon every 2 seconds
 3. Samples are uploaded to backend: `[-63, -64, -62, -65, ...]`
@@ -129,6 +133,7 @@ RSSI measures the power level of a Bluetooth signal in dBm (decibel-milliwatts).
 5. Stored as a **centroid** in the database
 
 **Example:**
+
 ```
 Kitchen beacon: samples = [-63, -64, -62, -65, -63, -64]
 Mean RSSI = sum(samples) / count = -63.5 dBm
@@ -139,6 +144,7 @@ Mean RSSI = sum(samples) / count = -63.5 dBm
 A **centroid** is simply the mean RSSI value for a beacon, representing its "expected" signal strength when you're in that room.
 
 **Stored Values:**
+
 ```
 Beacon AA (Kitchen):  mean_rssi = -63.5 dBm
 Beacon BB (Office):   mean_rssi = -72.0 dBm
@@ -148,12 +154,14 @@ Beacon CC (Bedroom):  mean_rssi = -80.5 dBm
 ### 5. Classification (Room Prediction)
 
 **Algorithm (Distance-Based):**
+
 1. Get current RSSI readings from all visible beacons
 2. For each beacon, calculate distance: `|current_rssi - mean_rssi|`
 3. The beacon with the **smallest distance** indicates current location
 4. Return the room associated with that beacon
 
 **Example:**
+
 ```python
 # Centroids (from calibration)
 Kitchen_mean = -63.5
@@ -180,6 +188,7 @@ distance_bedroom = abs(-85.0 - (-80.5)) = 4.5
 Confidence indicates how reliable the prediction is (0.0 - 1.0).
 
 **Calculation:**
+
 ```python
 # Base confidence: Inverse exponential of distance
 base_confidence = exp(-distance / 10.0)
@@ -192,6 +201,7 @@ confidence = min(1.0, base_confidence * margin_factor)
 ```
 
 **Interpretation:**
+
 - **0.8 - 1.0**: Very confident (clearly in this room)
 - **0.6 - 0.8**: Confident (likely in this room)
 - **0.4 - 0.6**: Uncertain (could be multiple rooms)
@@ -202,6 +212,7 @@ confidence = min(1.0, base_confidence * margin_factor)
 When a user stays in a room for 60+ seconds with stable readings, the app logs a **dwell event** to track movement patterns.
 
 **Dwell Event Data:**
+
 ```json
 {
   "room": "Kitchen",
@@ -218,6 +229,7 @@ When a user stays in a room for 60+ seconds with stable readings, the app logs a
 ### Overview
 
 The Flutter app is the user-facing interface that:
+
 - Scans for BLE beacons and collects RSSI values
 - Guides users through calibration
 - Displays current room and confidence
@@ -295,6 +307,7 @@ class HomeSenseApp extends StatelessWidget {
 Handles all Bluetooth operations through native Android code via MethodChannel.
 
 **Key Methods:**
+
 ```dart
 class BluetoothService {
   static const MethodChannel _channel = MethodChannel('com.homesense/bluetooth');
@@ -314,6 +327,7 @@ class BluetoothService {
 ```
 
 **BluetoothDeviceInfo:**
+
 ```dart
 class BluetoothDeviceInfo {
   final String name;     // Display name (may be empty)
@@ -324,6 +338,7 @@ class BluetoothDeviceInfo {
 
 **Web Support:**
 For testing on web, mock devices are returned:
+
 ```dart
 static final List<BluetoothDeviceInfo> _mockDevices = [
   BluetoothDeviceInfo(name: 'Living Room Beacon', address: 'AA:BB:CC:DD:EE:01', rssi: -45),
@@ -337,6 +352,7 @@ static final List<BluetoothDeviceInfo> _mockDevices = [
 HTTP client for all backend communication.
 
 **Key Methods:**
+
 ```dart
 class ApiService {
   String _baseUrl;
@@ -384,6 +400,7 @@ class ApiService {
 ```
 
 **Base URL Resolution:**
+
 ```dart
 static String _defaultBaseUrl() {
   if (kIsWeb) return 'http://localhost:8000';
@@ -400,6 +417,7 @@ static String _defaultBaseUrl() {
 Tracks user location over time and logs dwell events.
 
 **Key Features:**
+
 - Tracks current room and time entered
 - Maintains list of recently visited rooms
 - Logs dwell event when room changes after 60+ seconds
@@ -431,6 +449,7 @@ class LocationTracker {
 #### 1. WelcomePage (`lib/pages/welcome_page.dart`)
 
 Splash screen that routes based on calibration status:
+
 - If calibrated → `HomePage`
 - If not calibrated → `StartSetupPage`
 
@@ -438,7 +457,7 @@ Splash screen that routes based on calibration status:
 Timer(const Duration(seconds: 2), () async {
   final prefs = await SharedPreferences.getInstance();
   final calibrated = prefs.getBool('calibrated') ?? false;
-  
+
   Navigator.of(context).pushReplacement(
     MaterialPageRoute(
       builder: (_) => calibrated ? const HomePage() : const StartSetupPage(),
@@ -456,6 +475,7 @@ Scans for nearby beacons and allows user to select which ones to calibrate.
 User assigns each selected beacon to a room name.
 
 **Creates BeaconRoomAssignment objects:**
+
 ```dart
 class BeaconRoomAssignment {
   final BeaconInfo beacon;
@@ -473,6 +493,7 @@ The actual calibration process:
 4. Calls `/calibration/fit` after all rooms done
 
 **Key Flow:**
+
 ```dart
 // Start periodic scanning
 _scanTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
@@ -505,11 +526,13 @@ await _api.uploadCalibration(
 Navigation shell with bottom navigation bar and drawer menu.
 
 **Tabs:**
+
 - Suggestions (lightbulb) - Main room detection + suggestions
 - Insights (chart) - Daily analytics
 - Preferences (settings) - User customization
 
 **Drawer Options:**
+
 - Quick navigation to all pages
 - Recalibrate option (clears data and restarts setup)
 - About dialog
@@ -517,12 +540,14 @@ Navigation shell with bottom navigation bar and drawer menu.
 #### 6. SuggestionsPage (`lib/pages/suggestions_page.dart`)
 
 The main screen showing:
+
 - Current room with confidence bar
 - "LIVE" indicator when auto-refresh is on
 - Suggested actions based on context
 - Quick action buttons (e.g., timer)
 
 **Auto-Refresh:**
+
 ```dart
 static const _refreshInterval = Duration(seconds: 15);
 
@@ -534,6 +559,7 @@ _refreshTimer = Timer.periodic(_refreshInterval, (_) {
 ```
 
 **Lifecycle-Aware:**
+
 ```dart
 @override
 void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -549,6 +575,7 @@ void didChangeAppLifecycleState(AppLifecycleState state) {
 #### 7. InsightsPage (`lib/pages/insights_page.dart`)
 
 Shows daily location summary:
+
 - Date picker for historical data
 - Summary cards (active hours, transitions, most visited)
 - Room duration bars with percentages
@@ -557,6 +584,7 @@ Shows daily location summary:
 #### 8. PreferencesPage (`lib/pages/preferences_page.dart`)
 
 User preference configuration:
+
 - Predefined options by category (Lifestyle, Food, Health, Entertainment)
 - Custom preference input
 - Saved to SharedPreferences
@@ -570,7 +598,7 @@ User preference configuration:
 class BeaconInfo {
   final String address; // MAC address
   final String name;    // Display name
-  
+
   String get displayName => name.isNotEmpty ? name : address;
 }
 
@@ -599,6 +627,7 @@ static const Map<String, List<String>> categoryOptions = {
 ### Overview
 
 The FastAPI backend:
+
 - Stores calibration data and computes centroids
 - Classifies beacon readings to predict room
 - Generates contextual suggestions (LLM or rule-based)
@@ -696,23 +725,23 @@ def fit_centroids(db: Session) -> Dict[str, float]:
     """Calculate centroids for all beacons with calibration data."""
     rooms = crud.get_all_rooms(db)
     centroids_dict = {}
-    
+
     for room in rooms:
         windows = crud.get_calibration_windows_by_room(db, room.id)
-        
+
         # Collect all RSSI samples
         all_samples = []
         for window in windows:
             all_samples.extend(window.rssi_samples)
-        
+
         if all_samples:
             # Calculate mean RSSI
             mean_rssi = sum(all_samples) / len(all_samples)
-            
+
             # Store in database
             crud.upsert_centroid(db, room.id, mean_rssi)
             centroids_dict[room.beacon_id] = mean_rssi
-    
+
     return centroids_dict
 ```
 
@@ -721,10 +750,10 @@ def fit_centroids(db: Session) -> Dict[str, float]:
 Predicts room from beacon readings using distance comparison.
 
 ```python
-def infer_room(readings: List[BeaconReading], 
+def infer_room(readings: List[BeaconReading],
                centroids_dict: Dict[str, float]) -> Tuple[str, float]:
     """Find beacon closest to its calibrated mean RSSI."""
-    
+
     # Calculate distances
     distances = []
     for reading in readings:
@@ -732,12 +761,12 @@ def infer_room(readings: List[BeaconReading],
             mean_rssi = centroids_dict[reading.beacon_id]
             distance = abs(reading.rssi - mean_rssi)
             distances.append((reading.beacon_id, distance))
-    
+
     # Sort by distance (ascending)
     distances.sort(key=lambda x: x[1])
-    
+
     best_beacon_id, best_dist = distances[0]
-    
+
     # Calculate confidence
     if len(distances) > 1:
         margin = distances[1][1] - best_dist
@@ -746,7 +775,7 @@ def infer_room(readings: List[BeaconReading],
         confidence = min(1.0, base_confidence * margin_factor)
     else:
         confidence = math.exp(-best_dist / 10.0)
-    
+
     return (best_beacon_id, confidence)
 ```
 
@@ -755,6 +784,7 @@ def infer_room(readings: List[BeaconReading],
 Generates contextual suggestions using LLM or rule-based fallback.
 
 **Rule-Based Suggestions:**
+
 ```python
 RULE_BASED_SUGGESTIONS = {
     ("Kitchen", "morning"): {
@@ -772,11 +802,12 @@ RULE_BASED_SUGGESTIONS = {
 ```
 
 **Hour Bucket Classification:**
+
 ```python
 def get_hour_bucket(local_time: str) -> str:
     # Extract hour from "Day HH:MM"
     hour = int(local_time.split()[-1].split(":")[0])
-    
+
     if 5 <= hour < 12:
         return "morning"
     elif 12 <= hour < 17:
@@ -788,14 +819,15 @@ def get_hour_bucket(local_time: str) -> str:
 ```
 
 **LLM Integration (Optional):**
+
 ```python
 async def get_llm_suggestion(room, local_time, recent_rooms, user_prefs):
     if not settings.LLM_API_KEY:
         return None
-    
+
     prompt = f"""Given context: Room: {room}, Time: {local_time}...
     Respond with JSON: {{likely_activity, suggestion, quick_actions}}"""
-    
+
     # Supports Gemini or OpenAI
     if settings.LLM_PROVIDER == "gemini":
         # Call Gemini API
@@ -811,13 +843,13 @@ Analyzes daily movement patterns.
 def daily_summary(db: Session, date_str: str) -> Dict:
     start_ts, end_ts = get_day_timestamps(date_str)
     events = crud.get_events_by_date_range(db, start_ts, end_ts)
-    
+
     room_durations = {}
     for event in events:
         duration = event.end_ts - event.start_ts
         room_name = event.room.name
         room_durations[room_name] = room_durations.get(room_name, 0) + duration
-    
+
     return {
         "date": date_str,
         "total_duration": sum(room_durations.values()),
@@ -842,6 +874,7 @@ def daily_summary(db: Session, date_str: str) -> Dict:
 Check if server is running.
 
 **Response:**
+
 ```json
 {
   "status": "ok",
@@ -856,6 +889,7 @@ Check if server is running.
 Upload calibration data for a beacon.
 
 **Request:**
+
 ```json
 {
   "beacon_id": "AA:BB:CC:DD:EE:FF",
@@ -867,6 +901,7 @@ Upload calibration data for a beacon.
 ```
 
 **Response:**
+
 ```json
 {
   "ok": true,
@@ -876,6 +911,7 @@ Upload calibration data for a beacon.
 ```
 
 **Notes:**
+
 - Creates or updates Room with beacon_id
 - Overwrites previous calibration for same beacon
 - Stores raw samples in CalibrationWindow table
@@ -885,6 +921,7 @@ Upload calibration data for a beacon.
 Calculate centroids (mean RSSI) for all beacons.
 
 **Response:**
+
 ```json
 {
   "AA:BB:CC:DD:EE:FF": -63.5,
@@ -900,6 +937,7 @@ Calculate centroids (mean RSSI) for all beacons.
 Get all computed centroids.
 
 **Response:**
+
 ```json
 [
   {
@@ -924,17 +962,19 @@ Get all computed centroids.
 Predict current room from beacon readings.
 
 **Request:**
+
 ```json
 {
   "readings": [
-    {"beacon_id": "AA:BB:CC:DD:EE:FF", "rssi": -65.0},
-    {"beacon_id": "11:22:33:44:55:66", "rssi": -78.0},
-    {"beacon_id": "99:88:77:66:55:44", "rssi": -85.0}
+    { "beacon_id": "AA:BB:CC:DD:EE:FF", "rssi": -65.0 },
+    { "beacon_id": "11:22:33:44:55:66", "rssi": -78.0 },
+    { "beacon_id": "99:88:77:66:55:44", "rssi": -85.0 }
   ]
 }
 ```
 
 **Response:**
+
 ```json
 {
   "room": "Kitchen",
@@ -949,6 +989,7 @@ Predict current room from beacon readings.
 Get contextual suggestions based on location.
 
 **Request:**
+
 ```json
 {
   "room": "Kitchen",
@@ -959,11 +1000,16 @@ Get contextual suggestions based on location.
 ```
 
 **Response:**
+
 ```json
 {
   "likely_activity": "Making breakfast",
   "suggestion": "Good morning! Time to fuel up for the day.",
-  "quick_actions": ["Start coffee maker", "Set timer 10min", "Play morning news"]
+  "quick_actions": [
+    "Start coffee maker",
+    "Set timer 10min",
+    "Play morning news"
+  ]
 }
 ```
 
@@ -974,6 +1020,7 @@ Get contextual suggestions based on location.
 Log a location dwell event.
 
 **Request:**
+
 ```json
 {
   "room": "Kitchen",
@@ -984,6 +1031,7 @@ Log a location dwell event.
 ```
 
 **Response:**
+
 ```json
 {
   "id": 1
@@ -997,6 +1045,7 @@ Log a location dwell event.
 Get daily location summary.
 
 **Response:**
+
 ```json
 {
   "date": "2024-11-08",
@@ -1025,6 +1074,7 @@ Get daily location summary.
 ### Tables
 
 #### Room
+
 ```sql
 CREATE TABLE rooms (
     id INTEGER PRIMARY KEY,
@@ -1036,6 +1086,7 @@ CREATE TABLE rooms (
 **Relationship:** One room has one beacon (1:1)
 
 #### CalibrationWindow
+
 ```sql
 CREATE TABLE calibration_windows (
     id INTEGER PRIMARY KEY,
@@ -1050,6 +1101,7 @@ CREATE TABLE calibration_windows (
 **Purpose:** Store raw calibration samples. Recalibrating deletes old windows.
 
 #### Centroid
+
 ```sql
 CREATE TABLE centroids (
     id INTEGER PRIMARY KEY,
@@ -1062,6 +1114,7 @@ CREATE TABLE centroids (
 **Purpose:** Store the "fingerprint" calculated from calibration windows.
 
 #### LocationEvent
+
 ```sql
 CREATE TABLE location_events (
     id INTEGER PRIMARY KEY,
@@ -1192,12 +1245,12 @@ Response: {
 
 #### 1. Network Configuration
 
-| Environment | Backend URL |
-|-------------|-------------|
-| Android Emulator | `http://10.0.2.2:8000` |
-| iOS Simulator | `http://localhost:8000` |
-| Web Browser | `http://localhost:8000` |
-| Physical Device | `http://<LAN_IP>:8000` |
+| Environment      | Backend URL             |
+| ---------------- | ----------------------- |
+| Android Emulator | `http://10.0.2.2:8000`  |
+| iOS Simulator    | `http://localhost:8000` |
+| Web Browser      | `http://localhost:8000` |
+| Physical Device  | `http://<LAN_IP>:8000`  |
 
 The ApiService automatically resolves reachable URLs:
 
@@ -1228,6 +1281,7 @@ final resp = await http.post(
 #### 3. Error Handling
 
 The app handles network errors gracefully:
+
 - Connection timeout → Retry with different URL
 - Server error → Show error message with retry button
 - Empty readings → User-friendly guidance
@@ -1237,12 +1291,14 @@ The app handles network errors gracefully:
 The beacon's MAC address is used as the universal identifier:
 
 **Bluetooth Scan (Flutter):**
+
 ```dart
 // Returns MAC address like "AA:BB:CC:DD:EE:FF"
 final address = device.address;
 ```
 
 **API Request:**
+
 ```json
 {
   "beacon_id": "AA:BB:CC:DD:EE:FF",
@@ -1251,6 +1307,7 @@ final address = device.address;
 ```
 
 **Database (Backend):**
+
 ```python
 # Room table stores beacon_id
 room = Room(name="Kitchen", beacon_id="AA:BB:CC:DD:EE:FF")
@@ -1275,6 +1332,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 **Verify:**
+
 - API Docs: http://localhost:8000/docs
 - Health Check: http://localhost:8000/health
 
@@ -1289,9 +1347,11 @@ flutter run
 ### Testing Without Physical Beacons
 
 **Option 1: Web Mode (Mock Data)**
+
 ```bash
 flutter run -d chrome
 ```
+
 Mock beacons are automatically provided for testing.
 
 **Option 2: Manual Calibration via cURL**
@@ -1444,12 +1504,14 @@ static String _defaultBaseUrl() {
 ### Why 1-Beacon-Per-Room?
 
 **Old Approach (Multi-Beacon):**
+
 - All beacons visible from all rooms
 - Complex feature vectors with triplets per beacon
 - Required canonical beacon order configuration
 - Difficult to add/remove beacons
 
 **New Approach (1-Beacon):**
+
 - One beacon = one room (simple mental model)
 - Single mean RSSI value per beacon
 - No configuration needed
@@ -1458,11 +1520,13 @@ static String _defaultBaseUrl() {
 ### Why Distance-Based Classification?
 
 Instead of machine learning models, we use simple distance:
+
 ```python
 distance = abs(current_rssi - calibrated_mean_rssi)
 ```
 
 **Benefits:**
+
 - Transparent and explainable
 - No training required
 - Fast computation
@@ -1479,14 +1543,14 @@ distance = abs(current_rssi - calibrated_mean_rssi)
 
 ## Troubleshooting
 
-| Issue | Cause | Solution |
-|-------|-------|----------|
-| Connection timeout | Backend not running | Start uvicorn server |
-| Empty readings | Location services off | Enable Location on Android |
-| Low confidence | Stale calibration | Recalibrate the room |
-| Wrong room prediction | Beacon moved | Recalibrate that beacon |
-| No centroids | Forgot to fit | Call POST /calibration/fit |
-| Timer fails | OEM restrictions | Try different clock apps |
+| Issue                 | Cause                 | Solution                   |
+| --------------------- | --------------------- | -------------------------- |
+| Connection timeout    | Backend not running   | Start uvicorn server       |
+| Empty readings        | Location services off | Enable Location on Android |
+| Low confidence        | Stale calibration     | Recalibrate the room       |
+| Wrong room prediction | Beacon moved          | Recalibrate that beacon    |
+| No centroids          | Forgot to fit         | Call POST /calibration/fit |
+| Timer fails           | OEM restrictions      | Try different clock apps   |
 
 ---
 
@@ -1504,5 +1568,5 @@ The system follows a **1-beacon-per-room model** with **distance-based classific
 
 ---
 
-*Last Updated: November 2024*
+_Last Updated: November 2024_
 

@@ -11,6 +11,9 @@ class DailySummary(BaseModel):
     transitions: List[List[Any]]  # [[from_room, to_room, timestamp], ...]
     summary: Dict[str, Any]  # active_hours, most_visited_room, most_visited_duration
     
+    # LLM-generated insight summary (if available)
+    llm_summary: Optional[str] = None
+    
     # Legacy fields for backwards compatibility
     dwell: Optional[Dict[str, float]] = None  # Room -> fraction of time spent
     accuracy: Optional[float] = None

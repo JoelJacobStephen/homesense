@@ -59,6 +59,13 @@ PREFERENCE_SUGGESTIONS = {
         "suggestion_text": "Time for restful sleep. Sweet dreams!",
         "likely_activity": "Preparing for sleep",
     },
+    "evening_journaling": {
+        "relevant_rooms": ["Bedroom"],
+        "relevant_times": ["evening"],
+        "action_label": "Open journaling",
+        "suggestion_text": "Perfect time to reflect on your day. Journaling helps clear the mind!",
+        "likely_activity": "Evening reflection",
+    },
     
     # Productivity preferences
     "focus_music": {
@@ -429,14 +436,15 @@ def get_rule_based_suggestion(
     return Suggestion(**suggestion_data)
 
 
-async def get_llm_suggestion(
+async def get_llm_suggestion_text(
     room: str,
     local_time: str,
     recent_rooms: Optional[List[str]] = None,
     user_prefs: Optional[List[str]] = None
-) -> Optional[Suggestion]:
+) -> Optional[Dict[str, str]]:
     """
-    Generate suggestion using LLM API.
+    Generate ONLY the suggestion text and likely activity using LLM.
+    Quick actions are handled by rule-based system for predictability.
     
     Args:
         room: Current room name
@@ -445,7 +453,7 @@ async def get_llm_suggestion(
         user_prefs: User preferences
         
     Returns:
-        Suggestion object or None if LLM call fails
+        Dict with "likely_activity" and "suggestion" or None if LLM call fails
     """
     if not settings.LLM_API_KEY:
         return None
@@ -465,15 +473,21 @@ async def get_llm_suggestion(
         if pref_labels:
             context += f", User preferences: {', '.join(pref_labels)}"
     
-    # Construct prompt for JSON-only response
-    prompt = f"""Given the following context, suggest a helpful action for the user.
+    # Construct prompt for suggestion text ONLY (not quick actions)
+    prompt = f"""You are a smart home assistant. Based on the user's current context, generate a friendly, personalized suggestion message.
+
 Context: {context}
 
-Respond with ONLY a JSON object in this exact format (no markdown, no extra text):
+Requirements:
+- Be warm, friendly, and conversational
+- Keep it brief (1-2 sentences max)
+- Consider the time of day and location
+- If user has preferences, incorporate them naturally
+
+Respond with ONLY a JSON object (no markdown, no extra text):
 {{
-  "likely_activity": "brief description of what user is likely doing",
-  "suggestion": "helpful suggestion message",
-  "quick_actions": ["action1", "action2", "action3"]
+  "likely_activity": "brief description of what user is probably doing (3-5 words)",
+  "suggestion": "friendly personalized suggestion message (1-2 sentences)"
 }}"""
 
     try:
@@ -485,19 +499,25 @@ Respond with ONLY a JSON object in this exact format (no markdown, no extra text
                 "generationConfig": {"temperature": 0.7}
             }
         else:
-            # Generic OpenAI-compatible endpoint
+            # OpenAI API - using gpt-4o-mini (fast, cheap, capable)
             url = "https://api.openai.com/v1/chat/completions"
             payload = {
-                "model": "gpt-3.5-turbo",
+                "model": "gpt-4o-mini",
                 "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.7
+                "temperature": 0.7,
+                "max_tokens": 100  # Keep responses concise
             }
+        
+        # Build headers based on provider
+        headers = {"Content-Type": "application/json"}
+        if settings.LLM_PROVIDER != "gemini":
+            headers["Authorization"] = f"Bearer {settings.LLM_API_KEY}"
         
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.post(
                 url,
                 json=payload,
-                headers={"Content-Type": "application/json"}
+                headers=headers
             )
             response.raise_for_status()
             
@@ -510,7 +530,6 @@ Respond with ONLY a JSON object in this exact format (no markdown, no extra text
                 text = result["choices"][0]["message"]["content"]
             
             # Parse JSON from response
-            # Remove markdown code blocks if present
             text = text.strip()
             if text.startswith("```"):
                 text = text.split("```")[1]
@@ -518,11 +537,10 @@ Respond with ONLY a JSON object in this exact format (no markdown, no extra text
                     text = text[4:]
                 text = text.strip()
             
-            suggestion_data = json.loads(text)
-            return Suggestion(**suggestion_data)
+            return json.loads(text)
             
     except Exception as e:
-        print(f"LLM API error: {e}")
+        print(f"LLM suggestion text error: {e}")
         return None
 
 
@@ -533,7 +551,10 @@ async def generate_suggestion(
     user_prefs: Optional[List[str]] = None
 ) -> Suggestion:
     """
-    Generate contextual suggestion with LLM fallback to rule-based.
+    Generate contextual suggestion.
+    
+    - LLM generates the suggestion text (if available) for more personalized messages
+    - Rule-based system ALWAYS handles quick_actions for predictability
     
     Args:
         room: Current room name
@@ -544,11 +565,120 @@ async def generate_suggestion(
     Returns:
         Suggestion object (always returns a valid suggestion)
     """
-    # Try LLM first if API key is configured
-    if settings.LLM_API_KEY:
-        llm_suggestion = await get_llm_suggestion(room, local_time, recent_rooms, user_prefs)
-        if llm_suggestion:
-            return llm_suggestion
+    # Get rule-based suggestion first (this ALWAYS provides quick_actions)
+    rule_based = get_rule_based_suggestion(room, local_time, recent_rooms, user_prefs)
     
-    # Fall back to rule-based with preference integration
-    return get_rule_based_suggestion(room, local_time, recent_rooms, user_prefs)
+    # Try LLM for suggestion text if API key is configured
+    if settings.LLM_API_KEY:
+        llm_text = await get_llm_suggestion_text(room, local_time, recent_rooms, user_prefs)
+        if llm_text:
+            # Use LLM text with rule-based quick_actions
+            return Suggestion(
+                likely_activity=llm_text.get("likely_activity", rule_based.likely_activity),
+                suggestion=llm_text.get("suggestion", rule_based.suggestion),
+                quick_actions=rule_based.quick_actions  # Always use rule-based for predictability
+            )
+    
+    # Return full rule-based suggestion
+    return rule_based
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# INSIGHTS LLM SUMMARY
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def generate_insight_summary(
+    room_durations: Dict[str, int],
+    transitions: List,
+    total_duration: int,
+    most_visited_room: Optional[str],
+    date_str: str
+) -> Optional[str]:
+    """
+    Generate a brief LLM-powered insight summary based on daily activity data.
+    
+    Args:
+        room_durations: Dict mapping room names to seconds spent
+        transitions: List of room transitions
+        total_duration: Total tracked time in seconds
+        most_visited_room: Room where most time was spent
+        date_str: Date string (YYYY-MM-DD)
+        
+    Returns:
+        Brief insight summary string or None if LLM unavailable
+    """
+    if not settings.LLM_API_KEY:
+        return None
+    
+    if total_duration == 0:
+        return None
+    
+    # Build context from data
+    active_hours = round(total_duration / 3600, 1)
+    
+    # Format room durations
+    room_summary = []
+    for room, seconds in sorted(room_durations.items(), key=lambda x: -x[1]):
+        hours = round(seconds / 3600, 1)
+        minutes = round(seconds / 60)
+        if hours >= 1:
+            room_summary.append(f"{room}: {hours}h")
+        else:
+            room_summary.append(f"{room}: {minutes}min")
+    
+    context = f"""Date: {date_str}
+Total active time: {active_hours} hours
+Time by room: {', '.join(room_summary[:5])}
+Number of room transitions: {len(transitions)}
+Most time spent in: {most_visited_room or 'N/A'}"""
+
+    prompt = f"""Based on this home activity data, write a brief, friendly 1-2 sentence insight summary. 
+Be conversational and highlight interesting patterns or observations.
+
+{context}
+
+Examples of good summaries:
+- "Productive office day! You spent most of your time focused at work with minimal distractions."
+- "Relaxed evening at home - lots of time in the living room. Perfect for unwinding!"
+- "Active morning with good movement between rooms. Stayed energized throughout the day."
+
+Write ONLY the summary text (no quotes, no explanations):"""
+
+    try:
+        if settings.LLM_PROVIDER == "gemini":
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={settings.LLM_API_KEY}"
+            payload = {
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {"temperature": 0.7, "maxOutputTokens": 100}
+            }
+        else:
+            url = "https://api.openai.com/v1/chat/completions"
+            payload = {
+                "model": "gpt-4o-mini",
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.7,
+                "max_tokens": 80
+            }
+        
+        headers = {"Content-Type": "application/json"}
+        if settings.LLM_PROVIDER != "gemini":
+            headers["Authorization"] = f"Bearer {settings.LLM_API_KEY}"
+        
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(url, json=payload, headers=headers)
+            response.raise_for_status()
+            
+            result = response.json()
+            
+            if settings.LLM_PROVIDER == "gemini":
+                text = result["candidates"][0]["content"]["parts"][0]["text"]
+            else:
+                text = result["choices"][0]["message"]["content"]
+            
+            # Clean up the response
+            text = text.strip().strip('"').strip("'")
+            return text
+            
+    except Exception as e:
+        print(f"LLM insight summary error: {e}")
+        return None

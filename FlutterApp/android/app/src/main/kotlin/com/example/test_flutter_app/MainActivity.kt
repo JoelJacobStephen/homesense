@@ -161,66 +161,232 @@ class MainActivity : FlutterActivity() {
 		systemChannel.setMethodCallHandler { call: MethodCall, result: MethodChannel.Result ->
 			when (call.method) {
 				"openTimer" -> {
-					// Enhanced multi-attempt strategy for broader OEM coverage (Samsung, Pixel, etc.)
-					val candidateLengths = listOf(60, 300) // 1 min & 5 min
-					val timerIntents = candidateLengths.map { len ->
-						Intent(AlarmClock.ACTION_SET_TIMER).apply {
-							putExtra(AlarmClock.EXTRA_LENGTH, len)
-							putExtra(AlarmClock.EXTRA_SKIP_UI, false)
-							putExtra(AlarmClock.EXTRA_MESSAGE, "HomeSense Timer")
-						}
-					}
-					val showIntents = listOf(
-						Intent(AlarmClock.ACTION_SHOW_TIMERS),
-						Intent(AlarmClock.ACTION_SHOW_ALARMS)
-					)
-					val clockPackages = listOf(
-						"com.google.android.deskclock", // Pixel / Google Clock
-						"com.android.deskclock",       // AOSP
-						"com.sec.android.app.clockpackage" // Samsung Clock
-					)
-					fun tryLaunchIntent(intent: Intent): Boolean {
-						return try {
-							val resolved = intent.resolveActivity(packageManager)
-							if (resolved != null) {
-								intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-								startActivity(intent)
-								true
-							} else false
-						} catch (_: Throwable) {
-							false
-						}
-					}
-					var launched = false
-					for (ti in timerIntents) {
-						if (tryLaunchIntent(ti)) { launched = true; break }
-					}
-					if (!launched) {
-						for (si in showIntents) {
-							if (tryLaunchIntent(si)) { launched = true; break }
-						}
-					}
-					if (!launched) {
-						for (pkg in clockPackages) {
-							try {
-								val launch = packageManager.getLaunchIntentForPackage(pkg)
-								if (launch != null) {
-									launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-									startActivity(launch)
-									launched = true
-									break
-								}
-							} catch (_: Throwable) {}
-						}
-					}
-					if (launched) {
-						result.success(true)
+					val durationSeconds = call.argument<Int>("duration") ?: 60
+					handleOpenTimer(durationSeconds, result)
+				}
+				"openAlarm" -> {
+					handleOpenAlarm(result)
+				}
+				"openClock" -> {
+					handleOpenClock(result)
+				}
+				"launchApp" -> {
+					val packageName = call.argument<String>("package")
+					if (packageName != null) {
+						handleLaunchApp(packageName, result)
 					} else {
-						result.error("timer_error", "Unable to open any clock/timer activity", null)
+						result.error("invalid_args", "Package name required", null)
 					}
 				}
 				else -> result.notImplemented()
 			}
+		}
+	}
+
+	private val clockPackages = listOf(
+		"com.google.android.deskclock", // Pixel / Google Clock
+		"com.android.deskclock",        // AOSP
+		"com.sec.android.app.clockpackage" // Samsung Clock
+	)
+
+	private fun tryLaunchIntent(intent: Intent): Boolean {
+		return try {
+			val resolved = intent.resolveActivity(packageManager)
+			if (resolved != null) {
+				intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+				startActivity(intent)
+				true
+			} else false
+		} catch (_: Throwable) {
+			false
+		}
+	}
+
+	private fun handleOpenTimer(durationSeconds: Int, result: MethodChannel.Result) {
+		var launched = false
+		
+		// FIRST: Try SET_TIMER with specific clock package (avoids other apps intercepting)
+		for (pkg in clockPackages) {
+			try {
+				val timerIntent = Intent(AlarmClock.ACTION_SET_TIMER).apply {
+					setPackage(pkg)
+					putExtra(AlarmClock.EXTRA_LENGTH, durationSeconds)
+					putExtra(AlarmClock.EXTRA_SKIP_UI, false)
+					putExtra(AlarmClock.EXTRA_MESSAGE, "HomeSense")
+				}
+				val resolved = timerIntent.resolveActivity(packageManager)
+				if (resolved != null) {
+					timerIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+					startActivity(timerIntent)
+					launched = true
+					break
+				}
+			} catch (_: Throwable) {}
+		}
+		
+		// SECOND: Try SHOW_TIMERS with specific clock package
+		if (!launched) {
+			for (pkg in clockPackages) {
+				try {
+					val showTimersIntent = Intent(AlarmClock.ACTION_SHOW_TIMERS).apply {
+						setPackage(pkg)
+					}
+					val resolved = showTimersIntent.resolveActivity(packageManager)
+					if (resolved != null) {
+						showTimersIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+						startActivity(showTimersIntent)
+						launched = true
+						break
+					}
+				} catch (_: Throwable) {}
+			}
+		}
+		
+		// THIRD: Try opening clock app directly
+		if (!launched) {
+			for (pkg in clockPackages) {
+				try {
+					val launch = packageManager.getLaunchIntentForPackage(pkg)
+					if (launch != null) {
+						launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+						startActivity(launch)
+						launched = true
+						break
+					}
+				} catch (_: Throwable) {}
+			}
+		}
+		
+		// LAST RESORT: Generic SET_TIMER (may open other apps)
+		if (!launched) {
+			val timerIntent = Intent(AlarmClock.ACTION_SET_TIMER).apply {
+				putExtra(AlarmClock.EXTRA_LENGTH, durationSeconds)
+				putExtra(AlarmClock.EXTRA_SKIP_UI, false)
+				putExtra(AlarmClock.EXTRA_MESSAGE, "HomeSense")
+			}
+			if (tryLaunchIntent(timerIntent)) {
+				launched = true
+			}
+		}
+		
+		if (launched) {
+			result.success(true)
+		} else {
+			result.error("timer_error", "Unable to open any clock/timer activity", null)
+		}
+	}
+
+	private fun handleOpenAlarm(result: MethodChannel.Result) {
+		var launched = false
+		
+		// FIRST: Try opening clock app directly by package (avoids other apps intercepting)
+		for (pkg in clockPackages) {
+			try {
+				val launch = packageManager.getLaunchIntentForPackage(pkg)
+				if (launch != null) {
+					launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+					startActivity(launch)
+					launched = true
+					break
+				}
+			} catch (_: Throwable) {}
+		}
+		
+		// SECOND: Try SHOW_ALARMS with specific clock package
+		if (!launched) {
+			for (pkg in clockPackages) {
+				try {
+					val showAlarmsIntent = Intent(AlarmClock.ACTION_SHOW_ALARMS).apply {
+						setPackage(pkg)
+					}
+					val resolved = showAlarmsIntent.resolveActivity(packageManager)
+					if (resolved != null) {
+						showAlarmsIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+						startActivity(showAlarmsIntent)
+						launched = true
+						break
+					}
+				} catch (_: Throwable) {}
+			}
+		}
+		
+		// THIRD: Try SET_ALARM with specific clock package
+		if (!launched) {
+			for (pkg in clockPackages) {
+				try {
+					val setAlarmIntent = Intent(AlarmClock.ACTION_SET_ALARM).apply {
+						setPackage(pkg)
+						putExtra(AlarmClock.EXTRA_SKIP_UI, false)
+					}
+					val resolved = setAlarmIntent.resolveActivity(packageManager)
+					if (resolved != null) {
+						setAlarmIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+						startActivity(setAlarmIntent)
+						launched = true
+						break
+					}
+				} catch (_: Throwable) {}
+			}
+		}
+		
+		// LAST RESORT: Generic SHOW_ALARMS (may open other apps)
+		if (!launched) {
+			val showAlarmsIntent = Intent(AlarmClock.ACTION_SHOW_ALARMS)
+			if (tryLaunchIntent(showAlarmsIntent)) {
+				launched = true
+			}
+		}
+		
+		if (launched) {
+			result.success(true)
+		} else {
+			result.error("alarm_error", "Unable to open any clock/alarm activity", null)
+		}
+	}
+
+	private fun handleOpenClock(result: MethodChannel.Result) {
+		var launched = false
+		
+		// Try opening clock app directly
+		for (pkg in clockPackages) {
+			try {
+				val launch = packageManager.getLaunchIntentForPackage(pkg)
+				if (launch != null) {
+					launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+					startActivity(launch)
+					launched = true
+					break
+				}
+			} catch (_: Throwable) {}
+		}
+		
+		// Fallback: Try SHOW_ALARMS
+		if (!launched) {
+			val showAlarmsIntent = Intent(AlarmClock.ACTION_SHOW_ALARMS)
+			if (tryLaunchIntent(showAlarmsIntent)) {
+				launched = true
+			}
+		}
+		
+		if (launched) {
+			result.success(true)
+		} else {
+			result.error("clock_error", "Unable to open any clock activity", null)
+		}
+	}
+
+	private fun handleLaunchApp(packageName: String, result: MethodChannel.Result) {
+		try {
+			val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+			if (launchIntent != null) {
+				launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+				startActivity(launchIntent)
+				result.success(true)
+			} else {
+				result.success(false)
+			}
+		} catch (e: Throwable) {
+			result.success(false)
 		}
 	}
 
