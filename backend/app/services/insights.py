@@ -1,5 +1,5 @@
 """Insights service for analyzing location patterns."""
-from typing import Dict, List, Tuple
+from typing import Dict, List, Any
 from datetime import datetime
 
 
@@ -12,19 +12,26 @@ def daily_summary(events: List[Dict], date_str: str) -> Dict:
         date_str: Date string in YYYY-MM-DD format
         
     Returns:
-        Dictionary with dwell times, transitions, and accuracy
+        Dictionary with room durations, transitions, and summary stats
     """
     if not events:
         return {
             "date": date_str,
-            "dwell": {},
+            "room_durations": {},
+            "total_duration": 0,
             "transitions": [],
+            "summary": {
+                "active_hours": 0.0,
+                "most_visited_room": None,
+                "most_visited_duration": 0
+            },
+            "dwell": {},
             "accuracy": None
         }
     
-    # Calculate dwell time per room
+    # Calculate dwell time per room (in seconds)
     total_time = 0
-    room_time = {}
+    room_time: Dict[str, int] = {}
     
     for event in events:
         duration = event["end_ts"] - event["start_ts"]
@@ -36,34 +43,50 @@ def daily_summary(events: List[Dict], date_str: str) -> Dict:
         room_time[room] += duration
         total_time += duration
     
-    # Convert to fractions
+    # Calculate dwell fractions
     dwell = {}
     if total_time > 0:
         for room, time in room_time.items():
             dwell[room] = round(time / total_time, 3)
     
-    # Calculate transitions (consecutive room changes)
+    # Build transitions list with timestamps: [from_room, to_room, timestamp]
     transitions = []
-    transition_counts = {}
     
     # Sort events by start time
     sorted_events = sorted(events, key=lambda e: e["start_ts"])
     
     for i in range(len(sorted_events) - 1):
-        current_room = sorted_events[i]["room"]
-        next_room = sorted_events[i + 1]["room"]
+        current_event = sorted_events[i]
+        next_event = sorted_events[i + 1]
+        current_room = current_event["room"]
+        next_room = next_event["room"]
         
         if current_room != next_room:
-            key = (current_room, next_room)
-            transition_counts[key] = transition_counts.get(key, 0) + 1
+            # Transition happened at the end of current event
+            transition_time = current_event["end_ts"]
+            transitions.append([current_room, next_room, transition_time])
     
-    # Convert to list format
-    for (from_room, to_room), count in transition_counts.items():
-        transitions.append((from_room, to_room, count))
+    # Find most visited room
+    most_visited_room = None
+    most_visited_duration = 0
+    for room, duration in room_time.items():
+        if duration > most_visited_duration:
+            most_visited_room = room
+            most_visited_duration = duration
+    
+    # Calculate active hours
+    active_hours = total_time / 3600.0  # Convert seconds to hours
     
     return {
         "date": date_str,
-        "dwell": dwell,
+        "room_durations": room_time,
+        "total_duration": total_time,
         "transitions": transitions,
-        "accuracy": None  # Will be implemented later with ground truth data
+        "summary": {
+            "active_hours": round(active_hours, 2),
+            "most_visited_room": most_visited_room,
+            "most_visited_duration": most_visited_duration
+        },
+        "dwell": dwell,
+        "accuracy": None
     }

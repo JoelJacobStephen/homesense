@@ -360,7 +360,9 @@ class _SuggestionsPageState extends State<SuggestionsPage> with WidgetsBindingOb
                 child: Row(
                   children: [
                     Icon(
-                      detected ? Icons.bluetooth_connected : Icons.bluetooth_disabled,
+                      detected 
+                          ? (reading?['connected'] == true ? Icons.bluetooth_audio : Icons.bluetooth_connected)
+                          : Icons.bluetooth_disabled,
                       size: 16,
                       color: detected ? Colors.green : Colors.red,
                     ),

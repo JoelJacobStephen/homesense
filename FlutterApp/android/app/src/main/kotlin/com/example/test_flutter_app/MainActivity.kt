@@ -3,6 +3,7 @@ package com.example.test_flutter_app
 import android.Manifest
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothProfile
 import android.bluetooth.le.BluetoothLeScanner
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
@@ -23,6 +24,9 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import android.provider.AlarmClock
+import android.bluetooth.BluetoothManager
+import android.media.AudioManager
+import android.bluetooth.BluetoothClass
 
 class MainActivity : FlutterActivity() {
 	private val channelName = "com.homesense/bluetooth"
@@ -40,6 +44,75 @@ class MainActivity : FlutterActivity() {
 
 	private val foundDevices = linkedMapOf<String, BluetoothDevice>() // address -> device
     private val rssiByAddress = mutableMapOf<String, Int>() // latest RSSI per device
+    private val connectedAddresses = mutableSetOf<String>() // addresses of actively connected devices
+    
+    // Default RSSI for connected devices that aren't found during scan
+    // Connected devices are typically very close, so we assume a strong signal
+    companion object {
+        const val CONNECTED_DEVICE_DEFAULT_RSSI = -45
+    }
+    
+    /**
+     * Check if a BluetoothDevice is currently connected.
+     * Uses multiple strategies for maximum compatibility across Android versions.
+     */
+    private fun isDeviceConnected(device: BluetoothDevice): Boolean {
+        // Strategy 1: Try reflection to call isConnected()
+        try {
+            val method = device.javaClass.getMethod("isConnected")
+            val result = method.invoke(device) as? Boolean
+            if (result == true) return true
+        } catch (_: Throwable) {}
+        
+        // Strategy 2: Check if this is an audio device and Bluetooth audio is active
+        try {
+            val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            val isBluetoothAudioOn = audioManager.isBluetoothA2dpOn || audioManager.isBluetoothScoOn
+            
+            if (isBluetoothAudioOn) {
+                // Check if this device is an audio device (headphones, speaker, etc.)
+                val deviceClass = device.bluetoothClass
+                if (deviceClass != null) {
+                    val majorClass = deviceClass.majorDeviceClass
+                    val deviceClassInt = deviceClass.deviceClass
+                    
+                    // Audio device classes
+                    val isAudioDevice = majorClass == BluetoothClass.Device.Major.AUDIO_VIDEO ||
+                        deviceClassInt == BluetoothClass.Device.AUDIO_VIDEO_HEADPHONES ||
+                        deviceClassInt == BluetoothClass.Device.AUDIO_VIDEO_WEARABLE_HEADSET ||
+                        deviceClassInt == BluetoothClass.Device.AUDIO_VIDEO_HANDSFREE ||
+                        deviceClassInt == BluetoothClass.Device.AUDIO_VIDEO_LOUDSPEAKER ||
+                        deviceClassInt == BluetoothClass.Device.AUDIO_VIDEO_PORTABLE_AUDIO
+                    
+                    if (isAudioDevice) {
+                        // This audio device is likely the one connected since Bluetooth audio is active
+                        return true
+                    }
+                }
+            }
+        } catch (_: Throwable) {}
+        
+        // Strategy 3: Check profile connection state (fallback)
+        try {
+            val adapter = BluetoothAdapter.getDefaultAdapter()
+            val a2dpState = adapter.getProfileConnectionState(BluetoothProfile.A2DP)
+            val headsetState = adapter.getProfileConnectionState(BluetoothProfile.HEADSET)
+            
+            // If A2DP or Headset is connected, and this is an audio device, assume it's this one
+            if (a2dpState == BluetoothProfile.STATE_CONNECTED || 
+                headsetState == BluetoothProfile.STATE_CONNECTED) {
+                val deviceClass = device.bluetoothClass
+                if (deviceClass != null) {
+                    val majorClass = deviceClass.majorDeviceClass
+                    if (majorClass == BluetoothClass.Device.Major.AUDIO_VIDEO) {
+                        return true
+                    }
+                }
+            }
+        } catch (_: Throwable) {}
+        
+        return false
+    }
 
 	private val permissions31 = arrayOf(
 		Manifest.permission.BLUETOOTH_SCAN,
@@ -198,13 +271,25 @@ class MainActivity : FlutterActivity() {
 
 		scanResult = result
 		foundDevices.clear()
+		connectedAddresses.clear()
 
 		// Pre-populate with already bonded/paired devices so user always sees connectable devices.
+		// Also check if each bonded device is currently connected (for headphones, etc.)
 		try {
 			adapter?.bondedDevices?.forEach { d ->
 				val addr = d.address ?: return@forEach
 				if (!foundDevices.containsKey(addr)) {
 					foundDevices[addr] = d
+				}
+				
+				// Check if this bonded device is currently connected
+				// Connected devices (like headphones streaming audio) may not appear in scans
+				if (isDeviceConnected(d)) {
+					connectedAddresses.add(addr)
+					// Assign default RSSI for connected devices since they're assumed to be nearby
+					if (!rssiByAddress.containsKey(addr)) {
+						rssiByAddress[addr] = CONNECTED_DEVICE_DEFAULT_RSSI
+					}
 				}
 			}
 		} catch (_: Throwable) {}
@@ -303,15 +388,28 @@ class MainActivity : FlutterActivity() {
 		bleScanCallback = null
 		bleScanner = null
 
-		// We already merged bonded devices at start; no extra fallback needed.
+		// For connected devices that weren't found in scan, use default RSSI
+		// This ensures we can still detect headphones/devices that are connected but not advertising
+		connectedAddresses.forEach { addr ->
+			if (!rssiByAddress.containsKey(addr) || rssiByAddress[addr] == null) {
+				rssiByAddress[addr] = CONNECTED_DEVICE_DEFAULT_RSSI
+			}
+		}
 
 		val list = foundDevices.values.map {
             val addr = it.address
-            val rssiVal = try { rssiByAddress[addr] } catch (_: Throwable) { null }
+            var rssiVal = try { rssiByAddress[addr] } catch (_: Throwable) { null }
+            
+            // If device is connected but has no RSSI, use default
+            if (rssiVal == null && connectedAddresses.contains(addr)) {
+                rssiVal = CONNECTED_DEVICE_DEFAULT_RSSI
+            }
+            
             mapOf(
                 "name" to (it.name ?: "Unknown"),
                 "address" to addr,
-                "rssi" to rssiVal
+                "rssi" to rssiVal,
+                "connected" to connectedAddresses.contains(addr)  // Include connection status for debugging
             )
         }
 		scanResult?.success(list)

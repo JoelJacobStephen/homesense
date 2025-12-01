@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/beacon_info.dart';
@@ -14,7 +15,8 @@ class GoToRoomPage extends StatefulWidget {
   State<GoToRoomPage> createState() => _GoToRoomPageState();
 }
 
-class _GoToRoomPageState extends State<GoToRoomPage> {
+class _GoToRoomPageState extends State<GoToRoomPage>
+    with SingleTickerProviderStateMixin {
   int _index = 0;
   bool _reading = false;
   bool _uploading = false;
@@ -23,11 +25,11 @@ class _GoToRoomPageState extends State<GoToRoomPage> {
   Timer? _countdownTimer;
   Timer? _scanTimer;
 
-  // Collected RSSI samples for the current beacon
+  late AnimationController _pulseController;
+
   final List<double> _collectedSamples = [];
   int _windowStart = 0;
 
-  // API service for backend calls
   final ApiService _api = ApiService();
 
   BeaconRoomAssignment get _currentAssignment => widget.assignments[_index];
@@ -35,22 +37,63 @@ class _GoToRoomPageState extends State<GoToRoomPage> {
   String get _currentBeaconAddress => _currentAssignment.beacon.address;
   bool get _isLast => _index >= widget.assignments.length - 1;
 
+  // Room icons mapping
+  IconData _getRoomIcon(String room) {
+    switch (room.toLowerCase()) {
+      case 'bedroom':
+      case 'bedroom 2':
+      case 'guest room':
+        return Icons.bed_rounded;
+      case 'bathroom':
+        return Icons.bathtub_rounded;
+      case 'kitchen':
+        return Icons.kitchen_rounded;
+      case 'dining room':
+        return Icons.dining_rounded;
+      case 'living room':
+        return Icons.weekend_rounded;
+      case 'home theatre':
+        return Icons.tv_rounded;
+      case 'game room':
+        return Icons.sports_esports_rounded;
+      case 'fireplace':
+        return Icons.fireplace_rounded;
+      default:
+        return Icons.room_rounded;
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      duration: const Duration(milliseconds: 1500),
+      vsync: this,
+    )..repeat();
+  }
+
   @override
   void dispose() {
     _countdownTimer?.cancel();
     _scanTimer?.cancel();
+    _pulseController.dispose();
     super.dispose();
   }
 
   Future<void> _startReading() async {
     if (_reading || _completedForRoom) return;
 
-    // Ensure Bluetooth permissions
     final ok = await BluetoothService.ensurePermissions();
     if (!ok) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Bluetooth permissions required')),
+        SnackBar(
+          content: const Text('Bluetooth permissions required'),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
       );
       return;
     }
@@ -62,13 +105,11 @@ class _GoToRoomPageState extends State<GoToRoomPage> {
       _windowStart = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     });
 
-    // Start periodic scanning every 2 seconds
     _scanTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
       if (!mounted || !_reading) return;
       await _collectSample();
     });
 
-    // Start countdown timer
     _countdownTimer?.cancel();
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (t) {
       if (!mounted) return;
@@ -87,7 +128,6 @@ class _GoToRoomPageState extends State<GoToRoomPage> {
   Future<void> _collectSample() async {
     try {
       final readings = await BluetoothService.scanReadings();
-      // Find the RSSI for our target beacon
       for (final reading in readings) {
         if (reading['beacon_id'] == _currentBeaconAddress) {
           final rssi = reading['rssi'];
@@ -98,7 +138,6 @@ class _GoToRoomPageState extends State<GoToRoomPage> {
         }
       }
     } catch (e) {
-      // Silently ignore scan errors during calibration
       debugPrint('Scan error during calibration: $e');
     }
   }
@@ -111,10 +150,10 @@ class _GoToRoomPageState extends State<GoToRoomPage> {
 
     final windowEnd = DateTime.now().millisecondsSinceEpoch ~/ 1000;
 
-    // Upload calibration data to backend
     try {
       if (_collectedSamples.isEmpty) {
-        throw Exception('No RSSI samples collected. Make sure the beacon is nearby.');
+        throw Exception(
+            'No RSSI samples collected. Make sure the beacon is nearby.');
       }
 
       await _api.uploadCalibration(
@@ -142,6 +181,10 @@ class _GoToRoomPageState extends State<GoToRoomPage> {
             label: 'Retry',
             onPressed: _startReading,
           ),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
       );
     }
@@ -151,10 +194,8 @@ class _GoToRoomPageState extends State<GoToRoomPage> {
     if (!_completedForRoom) return;
 
     if (_isLast) {
-      // All rooms calibrated - now fit the model
       await _finishCalibration();
     } else {
-      // Move to next room
       setState(() {
         _index += 1;
         _reading = false;
@@ -168,68 +209,154 @@ class _GoToRoomPageState extends State<GoToRoomPage> {
   Future<void> _finishCalibration() async {
     if (!mounted) return;
 
-    // Show loading dialog while fitting
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => const AlertDialog(
-        content: Row(
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(width: 20),
-            Text('Computing centroids...'),
-          ],
+      builder: (_) => Dialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF7FAFC),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Center(
+                  child: SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 3,
+                      valueColor:
+                          AlwaysStoppedAnimation<Color>(Color(0xFF38B2AC)),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                'Finalizing...',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1A202C),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Computing room signatures.\nThis will just take a moment.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey[600],
+                  height: 1.4,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
 
     try {
-      // Call fit endpoint to compute centroids
       await _api.fitCalibration();
 
       if (!mounted) return;
-      Navigator.of(context).pop(); // Close loading dialog
+      Navigator.of(context).pop();
 
       // Show success dialog
       await showDialog(
         context: context,
-        builder: (_) => AlertDialog(
-          title: const Text('Calibration Complete'),
-          content: Text(
-            'All ${widget.assignments.length} room(s) have been calibrated successfully!',
+        barrierDismissible: false,
+        builder: (_) => Dialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('OK'),
-            )
-          ],
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF38B2AC).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Icon(
+                    Icons.check_rounded,
+                    color: Color(0xFF38B2AC),
+                    size: 40,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                const Text(
+                  'All set!',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF1A202C),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Your ${widget.assignments.length} room${widget.assignments.length != 1 ? 's have' : ' has'} been calibrated successfully.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 15,
+                    color: Colors.grey[600],
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 28),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      Navigator.of(context).pop();
+
+                      try {
+                        final prefs = await SharedPreferences.getInstance();
+                        await prefs.setBool('calibrated', true);
+                      } catch (_) {}
+
+                      if (!mounted) return;
+
+                      Navigator.of(context).pushAndRemoveUntil(
+                        MaterialPageRoute(builder: (_) => const HomePage()),
+                        (route) => false,
+                      );
+                    },
+                    child: const Text('Get Started'),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
-      );
-
-      // Persist calibration flag
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setBool('calibrated', true);
-      } catch (_) {
-        // Ignore SharedPreferences errors
-      }
-
-      if (!mounted) return;
-
-      // Navigate to home page
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const HomePage()),
-        (route) => false,
       );
     } catch (e) {
       if (!mounted) return;
-      Navigator.of(context).pop(); // Close loading dialog
+      Navigator.of(context).pop();
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Failed to compute centroids: $e'),
           duration: const Duration(seconds: 5),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
       );
     }
@@ -238,114 +365,369 @@ class _GoToRoomPageState extends State<GoToRoomPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Calibrate Room ${_index + 1}/${widget.assignments.length}'),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(24.0),
+      backgroundColor: Colors.white,
+      body: SafeArea(
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            const SizedBox(height: 24),
-            Text(
-              'Go to $_currentRoom',
-              style: Theme.of(context).textTheme.headlineMedium,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Beacon: ${_currentAssignment.beacon.displayName}',
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: Colors.grey[600],
+            // Header
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Back button and step indicator row
+                  Row(
+                    children: [
+                      GestureDetector(
+                        onTap: () => Navigator.of(context).pop(),
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF7FAFC),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(
+                            Icons.arrow_back_rounded,
+                            color: Color(0xFF4A5568),
+                            size: 20,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF7FAFC),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Text(
+                          'Step 3 of 3',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF718096),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Stand in the center of the room and press the button below. '
-              'Stay still for 60 seconds while we collect signal readings.',
-              style: Theme.of(context).textTheme.bodyMedium,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 32),
-
-            // State-based UI
-            if (!_reading && !_uploading && !_completedForRoom)
-              ElevatedButton.icon(
-                onPressed: _startReading,
-                icon: const Icon(Icons.bluetooth_searching),
-                label: const Text('Start Reading Data'),
+                ],
               ),
+            ),
 
-            if (_reading) ...[
-              const SizedBox(height: 8),
-              SizedBox(
-                width: 100,
-                height: 100,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    CircularProgressIndicator(
-                      value: (60 - _secondsLeft) / 60,
-                      strokeWidth: 8,
-                      backgroundColor: Colors.grey[300],
+            // Progress dots
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(
+                  widget.assignments.length,
+                  (i) => Container(
+                    width: i == _index ? 24 : 8,
+                    height: 8,
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    decoration: BoxDecoration(
+                      color: i < _index
+                          ? const Color(0xFF38B2AC)
+                          : i == _index
+                              ? const Color(0xFF2D3748)
+                              : const Color(0xFFE2E8F0),
+                      borderRadius: BorderRadius.circular(4),
                     ),
-                    Center(
-                      child: Text(
-                        '${_secondsLeft}s',
-                        style: Theme.of(context).textTheme.headlineSmall,
+                  ),
+                ),
+              ),
+            ),
+
+            // Main content
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // Room icon with pulse animation
+                    AnimatedBuilder(
+                      animation: _pulseController,
+                      builder: (context, child) {
+                        return Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            if (_reading) ...[
+                              // Outer pulse
+                              Transform.scale(
+                                scale:
+                                    1.0 + (0.3 * math.sin(_pulseController.value * 2 * math.pi)),
+                                child: Opacity(
+                                  opacity: 1.0 -
+                                      math.sin(_pulseController.value * 2 * math.pi)
+                                          .abs() *
+                                          0.7,
+                                  child: Container(
+                                    width: 140,
+                                    height: 140,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF38B2AC)
+                                          .withOpacity(0.2),
+                                      borderRadius: BorderRadius.circular(32),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                            // Main icon container
+                            Container(
+                              width: 100,
+                              height: 100,
+                              decoration: BoxDecoration(
+                                color: _completedForRoom
+                                    ? const Color(0xFF38B2AC).withOpacity(0.1)
+                                    : const Color(0xFFF7FAFC),
+                                borderRadius: BorderRadius.circular(28),
+                                border: Border.all(
+                                  color: _completedForRoom
+                                      ? const Color(0xFF38B2AC)
+                                      : _reading
+                                          ? const Color(0xFF38B2AC)
+                                              .withOpacity(0.3)
+                                          : const Color(0xFFE2E8F0),
+                                  width: 2,
+                                ),
+                              ),
+                              child: Icon(
+                                _completedForRoom
+                                    ? Icons.check_rounded
+                                    : _getRoomIcon(_currentRoom),
+                                size: 44,
+                                color: _completedForRoom
+                                    ? const Color(0xFF38B2AC)
+                                    : const Color(0xFF4A5568),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+
+                    const SizedBox(height: 32),
+
+                    // Room name
+                    Text(
+                      _currentRoom,
+                      style: const TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF1A202C),
+                        letterSpacing: -0.5,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Room ${_index + 1} of ${widget.assignments.length}',
+                      style: TextStyle(
+                        fontSize: 15,
+                        color: Colors.grey[500],
+                      ),
+                    ),
+
+                    const SizedBox(height: 32),
+
+                    // Status card
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: _reading
+                            ? const Color(0xFFF0FFF4)
+                            : _completedForRoom
+                                ? const Color(0xFFF0FFF4)
+                                : const Color(0xFFF7FAFC),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: _reading || _completedForRoom
+                              ? const Color(0xFF38B2AC).withOpacity(0.3)
+                              : const Color(0xFFE2E8F0),
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          if (!_reading &&
+                              !_uploading &&
+                              !_completedForRoom) ...[
+                            Icon(
+                              Icons.info_outline_rounded,
+                              color: Colors.grey[400],
+                              size: 28,
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              'Stand in the center of the room',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.grey[700],
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'We\'ll collect signal data for 60 seconds.\nPlease stay still during calibration.',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.grey[500],
+                                height: 1.4,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                          if (_reading) ...[
+                            // Countdown timer
+                            SizedBox(
+                              width: 80,
+                              height: 80,
+                              child: Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  CircularProgressIndicator(
+                                    value: (60 - _secondsLeft) / 60,
+                                    strokeWidth: 6,
+                                    backgroundColor: const Color(0xFFE2E8F0),
+                                    valueColor:
+                                        const AlwaysStoppedAnimation<Color>(
+                                      Color(0xFF38B2AC),
+                                    ),
+                                  ),
+                                  Center(
+                                    child: Text(
+                                      '$_secondsLeft',
+                                      style: const TextStyle(
+                                        fontSize: 28,
+                                        fontWeight: FontWeight.w700,
+                                        color: Color(0xFF2D3748),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'Collecting data...',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.grey[700],
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${_collectedSamples.length} samples',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.grey[500],
+                              ),
+                            ),
+                          ],
+                          if (_uploading) ...[
+                            const SizedBox(
+                              width: 28,
+                              height: 28,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 3,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Color(0xFF38B2AC),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'Uploading data...',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.grey[700],
+                              ),
+                            ),
+                          ],
+                          if (_completedForRoom) ...[
+                            const Icon(
+                              Icons.check_circle_rounded,
+                              color: Color(0xFF38B2AC),
+                              size: 40,
+                            ),
+                            const SizedBox(height: 12),
+                            const Text(
+                              'Room calibrated!',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF38B2AC),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${_collectedSamples.length} samples collected',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.grey[500],
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 16),
-              Text(
-                'Samples collected: ${_collectedSamples.length}',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Please stay still...',
-                style: TextStyle(color: Colors.orange),
-              ),
-            ],
+            ),
 
-            if (_uploading) ...[
-              const SizedBox(height: 16),
-              const CircularProgressIndicator(),
-              const SizedBox(height: 12),
-              const Text('Uploading calibration data...'),
-            ],
-
-            if (_completedForRoom) ...[
-              const SizedBox(height: 12),
-              const Icon(Icons.check_circle, color: Colors.green, size: 48),
-              const SizedBox(height: 8),
-              Text(
-                'Room calibrated!',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: Colors.green,
-                    ),
+            // Bottom action
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border(
+                  top: BorderSide(
+                    color: Colors.grey[100]!,
+                    width: 1,
+                  ),
+                ),
               ),
-              const SizedBox(height: 4),
-              Text(
-                '${_collectedSamples.length} samples collected',
-                style: Theme.of(context).textTheme.bodySmall,
+              child: SafeArea(
+                top: false,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (!_reading && !_uploading && !_completedForRoom)
+                      ElevatedButton(
+                        onPressed: _startReading,
+                        child: const Text('Start Calibration'),
+                      ),
+                    if (_reading)
+                      ElevatedButton(
+                        onPressed: null,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF38B2AC),
+                        ),
+                        child: const Text('Calibrating...'),
+                      ),
+                    if (_completedForRoom)
+                      ElevatedButton(
+                        onPressed: _next,
+                        child: Text(
+                            _isLast ? 'Finish Setup' : 'Continue to Next Room'),
+                      ),
+                  ],
+                ),
               ),
-            ],
-
-            const Spacer(),
+            ),
           ],
-        ),
-      ),
-      bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-          child: ElevatedButton(
-            onPressed: _completedForRoom ? _next : null,
-            child: Text(_isLast ? 'Finish Calibration' : 'Next Room'),
-          ),
         ),
       ),
     );
