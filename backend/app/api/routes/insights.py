@@ -3,6 +3,7 @@ from fastapi import APIRouter, Query, HTTPException, Depends
 from sqlalchemy.orm import Session
 from app.schemas.insights import DailySummary
 from app.services.insights import daily_summary
+from app.services.llm import generate_insight_summary
 from app.db.session import get_db
 from app.db import crud
 from datetime import datetime
@@ -21,6 +22,7 @@ async def get_daily_summary(
     Includes:
     - Dwell time fractions per room
     - Room-to-room transitions
+    - LLM-generated insight summary (if LLM is configured)
     - Accuracy metrics (placeholder for now)
     
     Args:
@@ -28,7 +30,7 @@ async def get_daily_summary(
         db: Database session
         
     Returns:
-        DailySummary with dwell times and transitions
+        DailySummary with dwell times, transitions, and optional LLM summary
     """
     # Parse date to get start/end timestamps
     try:
@@ -54,5 +56,18 @@ async def get_daily_summary(
     
     # Generate summary
     summary = daily_summary(events, date)
+    
+    # Generate LLM insight summary if there's data
+    llm_summary = None
+    if summary["total_duration"] > 0:
+        llm_summary = await generate_insight_summary(
+            room_durations=summary["room_durations"],
+            transitions=summary["transitions"],
+            total_duration=summary["total_duration"],
+            most_visited_room=summary["summary"].get("most_visited_room"),
+            date_str=date
+        )
+    
+    summary["llm_summary"] = llm_summary
     
     return DailySummary(**summary)

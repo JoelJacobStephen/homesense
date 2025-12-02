@@ -3,20 +3,24 @@ from app.db.session import engine, Base
 from app.db import models
 
 
-def init_db():
+def init_db(drop_existing: bool = False):
     """
-    Initialize database by creating all tables.
+    Initialize database by creating tables if they don't exist.
     
-    This drops existing tables and recreates them to ensure schema matches models.
+    Args:
+        drop_existing: If True, drops all tables first (destructive, for development only)
+    
     For production, use proper migrations instead.
     """
     # Import all models to ensure they're registered with Base
     # (already imported above, but being explicit)
     
-    # Drop all existing tables (for development - allows schema changes)
-    Base.metadata.drop_all(bind=engine)
+    if drop_existing:
+        # Drop all existing tables (destructive - use only for development/testing)
+        Base.metadata.drop_all(bind=engine)
+        print("⚠ Dropped all existing tables")
     
-    # Create all tables with new schema
+    # Create all tables (only creates if they don't exist)
     Base.metadata.create_all(bind=engine)
     
     print("✓ Database initialized successfully")

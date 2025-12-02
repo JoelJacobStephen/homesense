@@ -3,6 +3,7 @@ package com.example.test_flutter_app
 import android.Manifest
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothProfile
 import android.bluetooth.le.BluetoothLeScanner
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
@@ -23,6 +24,9 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import android.provider.AlarmClock
+import android.bluetooth.BluetoothManager
+import android.media.AudioManager
+import android.bluetooth.BluetoothClass
 
 class MainActivity : FlutterActivity() {
 	private val channelName = "com.homesense/bluetooth"
@@ -40,6 +44,75 @@ class MainActivity : FlutterActivity() {
 
 	private val foundDevices = linkedMapOf<String, BluetoothDevice>() // address -> device
     private val rssiByAddress = mutableMapOf<String, Int>() // latest RSSI per device
+    private val connectedAddresses = mutableSetOf<String>() // addresses of actively connected devices
+    
+    // Default RSSI for connected devices that aren't found during scan
+    // Connected devices are typically very close, so we assume a strong signal
+    companion object {
+        const val CONNECTED_DEVICE_DEFAULT_RSSI = -45
+    }
+    
+    /**
+     * Check if a BluetoothDevice is currently connected.
+     * Uses multiple strategies for maximum compatibility across Android versions.
+     */
+    private fun isDeviceConnected(device: BluetoothDevice): Boolean {
+        // Strategy 1: Try reflection to call isConnected()
+        try {
+            val method = device.javaClass.getMethod("isConnected")
+            val result = method.invoke(device) as? Boolean
+            if (result == true) return true
+        } catch (_: Throwable) {}
+        
+        // Strategy 2: Check if this is an audio device and Bluetooth audio is active
+        try {
+            val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            val isBluetoothAudioOn = audioManager.isBluetoothA2dpOn || audioManager.isBluetoothScoOn
+            
+            if (isBluetoothAudioOn) {
+                // Check if this device is an audio device (headphones, speaker, etc.)
+                val deviceClass = device.bluetoothClass
+                if (deviceClass != null) {
+                    val majorClass = deviceClass.majorDeviceClass
+                    val deviceClassInt = deviceClass.deviceClass
+                    
+                    // Audio device classes
+                    val isAudioDevice = majorClass == BluetoothClass.Device.Major.AUDIO_VIDEO ||
+                        deviceClassInt == BluetoothClass.Device.AUDIO_VIDEO_HEADPHONES ||
+                        deviceClassInt == BluetoothClass.Device.AUDIO_VIDEO_WEARABLE_HEADSET ||
+                        deviceClassInt == BluetoothClass.Device.AUDIO_VIDEO_HANDSFREE ||
+                        deviceClassInt == BluetoothClass.Device.AUDIO_VIDEO_LOUDSPEAKER ||
+                        deviceClassInt == BluetoothClass.Device.AUDIO_VIDEO_PORTABLE_AUDIO
+                    
+                    if (isAudioDevice) {
+                        // This audio device is likely the one connected since Bluetooth audio is active
+                        return true
+                    }
+                }
+            }
+        } catch (_: Throwable) {}
+        
+        // Strategy 3: Check profile connection state (fallback)
+        try {
+            val adapter = BluetoothAdapter.getDefaultAdapter()
+            val a2dpState = adapter.getProfileConnectionState(BluetoothProfile.A2DP)
+            val headsetState = adapter.getProfileConnectionState(BluetoothProfile.HEADSET)
+            
+            // If A2DP or Headset is connected, and this is an audio device, assume it's this one
+            if (a2dpState == BluetoothProfile.STATE_CONNECTED || 
+                headsetState == BluetoothProfile.STATE_CONNECTED) {
+                val deviceClass = device.bluetoothClass
+                if (deviceClass != null) {
+                    val majorClass = deviceClass.majorDeviceClass
+                    if (majorClass == BluetoothClass.Device.Major.AUDIO_VIDEO) {
+                        return true
+                    }
+                }
+            }
+        } catch (_: Throwable) {}
+        
+        return false
+    }
 
 	private val permissions31 = arrayOf(
 		Manifest.permission.BLUETOOTH_SCAN,
@@ -88,66 +161,232 @@ class MainActivity : FlutterActivity() {
 		systemChannel.setMethodCallHandler { call: MethodCall, result: MethodChannel.Result ->
 			when (call.method) {
 				"openTimer" -> {
-					// Enhanced multi-attempt strategy for broader OEM coverage (Samsung, Pixel, etc.)
-					val candidateLengths = listOf(60, 300) // 1 min & 5 min
-					val timerIntents = candidateLengths.map { len ->
-						Intent(AlarmClock.ACTION_SET_TIMER).apply {
-							putExtra(AlarmClock.EXTRA_LENGTH, len)
-							putExtra(AlarmClock.EXTRA_SKIP_UI, false)
-							putExtra(AlarmClock.EXTRA_MESSAGE, "HomeSense Timer")
-						}
-					}
-					val showIntents = listOf(
-						Intent(AlarmClock.ACTION_SHOW_TIMERS),
-						Intent(AlarmClock.ACTION_SHOW_ALARMS)
-					)
-					val clockPackages = listOf(
-						"com.google.android.deskclock", // Pixel / Google Clock
-						"com.android.deskclock",       // AOSP
-						"com.sec.android.app.clockpackage" // Samsung Clock
-					)
-					fun tryLaunchIntent(intent: Intent): Boolean {
-						return try {
-							val resolved = intent.resolveActivity(packageManager)
-							if (resolved != null) {
-								intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-								startActivity(intent)
-								true
-							} else false
-						} catch (_: Throwable) {
-							false
-						}
-					}
-					var launched = false
-					for (ti in timerIntents) {
-						if (tryLaunchIntent(ti)) { launched = true; break }
-					}
-					if (!launched) {
-						for (si in showIntents) {
-							if (tryLaunchIntent(si)) { launched = true; break }
-						}
-					}
-					if (!launched) {
-						for (pkg in clockPackages) {
-							try {
-								val launch = packageManager.getLaunchIntentForPackage(pkg)
-								if (launch != null) {
-									launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-									startActivity(launch)
-									launched = true
-									break
-								}
-							} catch (_: Throwable) {}
-						}
-					}
-					if (launched) {
-						result.success(true)
+					val durationSeconds = call.argument<Int>("duration") ?: 60
+					handleOpenTimer(durationSeconds, result)
+				}
+				"openAlarm" -> {
+					handleOpenAlarm(result)
+				}
+				"openClock" -> {
+					handleOpenClock(result)
+				}
+				"launchApp" -> {
+					val packageName = call.argument<String>("package")
+					if (packageName != null) {
+						handleLaunchApp(packageName, result)
 					} else {
-						result.error("timer_error", "Unable to open any clock/timer activity", null)
+						result.error("invalid_args", "Package name required", null)
 					}
 				}
 				else -> result.notImplemented()
 			}
+		}
+	}
+
+	private val clockPackages = listOf(
+		"com.google.android.deskclock", // Pixel / Google Clock
+		"com.android.deskclock",        // AOSP
+		"com.sec.android.app.clockpackage" // Samsung Clock
+	)
+
+	private fun tryLaunchIntent(intent: Intent): Boolean {
+		return try {
+			val resolved = intent.resolveActivity(packageManager)
+			if (resolved != null) {
+				intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+				startActivity(intent)
+				true
+			} else false
+		} catch (_: Throwable) {
+			false
+		}
+	}
+
+	private fun handleOpenTimer(durationSeconds: Int, result: MethodChannel.Result) {
+		var launched = false
+		
+		// FIRST: Try SET_TIMER with specific clock package (avoids other apps intercepting)
+		for (pkg in clockPackages) {
+			try {
+				val timerIntent = Intent(AlarmClock.ACTION_SET_TIMER).apply {
+					setPackage(pkg)
+					putExtra(AlarmClock.EXTRA_LENGTH, durationSeconds)
+					putExtra(AlarmClock.EXTRA_SKIP_UI, false)
+					putExtra(AlarmClock.EXTRA_MESSAGE, "HomeSense")
+				}
+				val resolved = timerIntent.resolveActivity(packageManager)
+				if (resolved != null) {
+					timerIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+					startActivity(timerIntent)
+					launched = true
+					break
+				}
+			} catch (_: Throwable) {}
+		}
+		
+		// SECOND: Try SHOW_TIMERS with specific clock package
+		if (!launched) {
+			for (pkg in clockPackages) {
+				try {
+					val showTimersIntent = Intent(AlarmClock.ACTION_SHOW_TIMERS).apply {
+						setPackage(pkg)
+					}
+					val resolved = showTimersIntent.resolveActivity(packageManager)
+					if (resolved != null) {
+						showTimersIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+						startActivity(showTimersIntent)
+						launched = true
+						break
+					}
+				} catch (_: Throwable) {}
+			}
+		}
+		
+		// THIRD: Try opening clock app directly
+		if (!launched) {
+			for (pkg in clockPackages) {
+				try {
+					val launch = packageManager.getLaunchIntentForPackage(pkg)
+					if (launch != null) {
+						launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+						startActivity(launch)
+						launched = true
+						break
+					}
+				} catch (_: Throwable) {}
+			}
+		}
+		
+		// LAST RESORT: Generic SET_TIMER (may open other apps)
+		if (!launched) {
+			val timerIntent = Intent(AlarmClock.ACTION_SET_TIMER).apply {
+				putExtra(AlarmClock.EXTRA_LENGTH, durationSeconds)
+				putExtra(AlarmClock.EXTRA_SKIP_UI, false)
+				putExtra(AlarmClock.EXTRA_MESSAGE, "HomeSense")
+			}
+			if (tryLaunchIntent(timerIntent)) {
+				launched = true
+			}
+		}
+		
+		if (launched) {
+			result.success(true)
+		} else {
+			result.error("timer_error", "Unable to open any clock/timer activity", null)
+		}
+	}
+
+	private fun handleOpenAlarm(result: MethodChannel.Result) {
+		var launched = false
+		
+		// FIRST: Try opening clock app directly by package (avoids other apps intercepting)
+		for (pkg in clockPackages) {
+			try {
+				val launch = packageManager.getLaunchIntentForPackage(pkg)
+				if (launch != null) {
+					launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+					startActivity(launch)
+					launched = true
+					break
+				}
+			} catch (_: Throwable) {}
+		}
+		
+		// SECOND: Try SHOW_ALARMS with specific clock package
+		if (!launched) {
+			for (pkg in clockPackages) {
+				try {
+					val showAlarmsIntent = Intent(AlarmClock.ACTION_SHOW_ALARMS).apply {
+						setPackage(pkg)
+					}
+					val resolved = showAlarmsIntent.resolveActivity(packageManager)
+					if (resolved != null) {
+						showAlarmsIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+						startActivity(showAlarmsIntent)
+						launched = true
+						break
+					}
+				} catch (_: Throwable) {}
+			}
+		}
+		
+		// THIRD: Try SET_ALARM with specific clock package
+		if (!launched) {
+			for (pkg in clockPackages) {
+				try {
+					val setAlarmIntent = Intent(AlarmClock.ACTION_SET_ALARM).apply {
+						setPackage(pkg)
+						putExtra(AlarmClock.EXTRA_SKIP_UI, false)
+					}
+					val resolved = setAlarmIntent.resolveActivity(packageManager)
+					if (resolved != null) {
+						setAlarmIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+						startActivity(setAlarmIntent)
+						launched = true
+						break
+					}
+				} catch (_: Throwable) {}
+			}
+		}
+		
+		// LAST RESORT: Generic SHOW_ALARMS (may open other apps)
+		if (!launched) {
+			val showAlarmsIntent = Intent(AlarmClock.ACTION_SHOW_ALARMS)
+			if (tryLaunchIntent(showAlarmsIntent)) {
+				launched = true
+			}
+		}
+		
+		if (launched) {
+			result.success(true)
+		} else {
+			result.error("alarm_error", "Unable to open any clock/alarm activity", null)
+		}
+	}
+
+	private fun handleOpenClock(result: MethodChannel.Result) {
+		var launched = false
+		
+		// Try opening clock app directly
+		for (pkg in clockPackages) {
+			try {
+				val launch = packageManager.getLaunchIntentForPackage(pkg)
+				if (launch != null) {
+					launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+					startActivity(launch)
+					launched = true
+					break
+				}
+			} catch (_: Throwable) {}
+		}
+		
+		// Fallback: Try SHOW_ALARMS
+		if (!launched) {
+			val showAlarmsIntent = Intent(AlarmClock.ACTION_SHOW_ALARMS)
+			if (tryLaunchIntent(showAlarmsIntent)) {
+				launched = true
+			}
+		}
+		
+		if (launched) {
+			result.success(true)
+		} else {
+			result.error("clock_error", "Unable to open any clock activity", null)
+		}
+	}
+
+	private fun handleLaunchApp(packageName: String, result: MethodChannel.Result) {
+		try {
+			val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+			if (launchIntent != null) {
+				launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+				startActivity(launchIntent)
+				result.success(true)
+			} else {
+				result.success(false)
+			}
+		} catch (e: Throwable) {
+			result.success(false)
 		}
 	}
 
@@ -198,13 +437,25 @@ class MainActivity : FlutterActivity() {
 
 		scanResult = result
 		foundDevices.clear()
+		connectedAddresses.clear()
 
 		// Pre-populate with already bonded/paired devices so user always sees connectable devices.
+		// Also check if each bonded device is currently connected (for headphones, etc.)
 		try {
 			adapter?.bondedDevices?.forEach { d ->
 				val addr = d.address ?: return@forEach
 				if (!foundDevices.containsKey(addr)) {
 					foundDevices[addr] = d
+				}
+				
+				// Check if this bonded device is currently connected
+				// Connected devices (like headphones streaming audio) may not appear in scans
+				if (isDeviceConnected(d)) {
+					connectedAddresses.add(addr)
+					// Assign default RSSI for connected devices since they're assumed to be nearby
+					if (!rssiByAddress.containsKey(addr)) {
+						rssiByAddress[addr] = CONNECTED_DEVICE_DEFAULT_RSSI
+					}
 				}
 			}
 		} catch (_: Throwable) {}
@@ -303,15 +554,28 @@ class MainActivity : FlutterActivity() {
 		bleScanCallback = null
 		bleScanner = null
 
-		// We already merged bonded devices at start; no extra fallback needed.
+		// For connected devices that weren't found in scan, use default RSSI
+		// This ensures we can still detect headphones/devices that are connected but not advertising
+		connectedAddresses.forEach { addr ->
+			if (!rssiByAddress.containsKey(addr) || rssiByAddress[addr] == null) {
+				rssiByAddress[addr] = CONNECTED_DEVICE_DEFAULT_RSSI
+			}
+		}
 
 		val list = foundDevices.values.map {
             val addr = it.address
-            val rssiVal = try { rssiByAddress[addr] } catch (_: Throwable) { null }
+            var rssiVal = try { rssiByAddress[addr] } catch (_: Throwable) { null }
+            
+            // If device is connected but has no RSSI, use default
+            if (rssiVal == null && connectedAddresses.contains(addr)) {
+                rssiVal = CONNECTED_DEVICE_DEFAULT_RSSI
+            }
+            
             mapOf(
                 "name" to (it.name ?: "Unknown"),
                 "address" to addr,
-                "rssi" to rssiVal
+                "rssi" to rssiVal,
+                "connected" to connectedAddresses.contains(addr)  // Include connection status for debugging
             )
         }
 		scanResult?.success(list)
